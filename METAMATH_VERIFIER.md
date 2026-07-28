@@ -137,6 +137,8 @@ worthless, so the suite is half negative controls:
 | `badstack` | corrupted final step | **fail** |
 | `badconcl` | well-formed, one stack entry, **wrong statement** | **fail** |
 | `incomp` | contains `?` | incomplete |
+| `dummyvar` | proof introduces a variable absent from the statement | ok |
+| `dvbad` | genuine disjoint-variable violation | **fail** |
 
 `badconcl` is the sharper of the two negative controls: the proof is
 structurally valid and leaves exactly one entry on the stack. Only the final
@@ -162,6 +164,49 @@ indication of why.
 
 ---
 
+## Two disjoint-variable sets, not one
+
+The first run against real `set.mm` verified 1,995 of 2,000 and failed five:
+`equid`, `ax7`, `exgen`, `spnfw`, `spsv` — all with disjoint-variable
+violations. `set.mm` is verified continuously upstream, so the reader was wrong.
+
+What those five share is **dummy variables**: variables a proof introduces
+internally that appear nowhere in the theorem it proves. `equid` proves
+`|- x = x` using an auxiliary `z`; the reported violation is `(x,z)`, and `z` is
+not in the statement.
+
+The mistake was using one DV set for two different jobs:
+
+| set | contents | used for |
+|---|---|---|
+| **mandatory** | pairs on variables occurring in the statement or its `$e` hypotheses | what a *later* proof must satisfy when it applies this theorem as a step |
+| **scope** | every pair active where the theorem is declared, unrestricted | checking *this theorem's own* proof, where dummies also need conditions |
+
+A dummy variable is by definition absent from the mandatory frame, so the
+condition governing it is filtered out of the mandatory set. Check the proof
+against that set and correct proofs get rejected.
+
+`make_assertion` computes the mandatory set; `all_dvs` computes the scope set,
+captured at the declaration point while the scope is still open. `verify` uses
+the scope set.
+
+A related detail: membership in the substituted sequences must be tested against
+a **global** record of every declared variable. By verification time the scope
+stack has been popped back to the outermost frame, so a scope-sensitive lookup
+misses any variable declared inside a `${ ... $}` block.
+
+The `dummyvar` selftest case pins this down. Reverting to the mandatory set
+makes it fail with the same error shape the real corpus produced:
+
+```
+dummyvar: disjoint-variable violation (x,y) -> (x,z) at axd
+```
+
+`dvbad` is its counterweight — a real violation that must fail under either
+policy, so the fix cannot be "stop checking".
+
+---
+
 ## Running it on set.mm
 
 ```powershell
@@ -179,11 +224,13 @@ show up in the first few hundred proofs rather than after a long wait.
 A clean run:
 
 ```
-  parsed in 28.4s: 3,000+ axioms, 44,000+ theorems, 1,000+ constants
+  set.mm: 51.0 MB
+  parsed in 10.4s: 3,000 axioms, 47,572 theorems, 1,439 constants
   verifying 2,000 proofs...
   verified   2,000
   incomplete 0
   FAILED     0
+  elapsed    0.2s  (8700/s)
 ```
 
 `incomplete` may be nonzero — `set.mm` carries some proofs with `?` placeholders.

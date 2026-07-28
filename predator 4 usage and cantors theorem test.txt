@@ -1,0 +1,61 @@
+# Train on 90% of set.mm
+python predator4_rf.py train --db set.mm -p 0.9
+
+# Scaling curve (train 0.9p of each size, test on fixed tail)
+python predator4_rf.py scale --db set.mm -p 0.9 --sizes 2000,4000,8000,16000,32000
+
+#To prove Cantor's theorem
+grep -i "cantor\|noendsurj" set.mm | head -10
+
+python predator4.py prove --label noendsurj --db set.mm -p 0.9
+
+#needs python -m pip install scikit-learn
+
+python predator4.py prove --label noendsurj --db set.mm -p 0.9 --model forest
+
+#########################################################
+
+python python_rf.py compare        # forest vs linear, same split/seed/pool
+python python_rf.py train          # forest only, with feature importances
+python python_rf.py prove --label prcom
+python python_rf.py probe --encoding dominance --top 50
+
+#######################################################
+
+for ($S=0; $S -lt 10; $S++) { 
+  python predator5.py compare --depth 4 --seed $S --budget 150 --n-estimators 40 | Select-String "logistic reorder" 
+
+########################################################
+
+Before attempting hyperreals, do ONE of these:
+
+Option A (Recommended): Widen the sweep to depth 5
+
+powershell
+python predator5.py compare --depth 5 --edge-cap 12 --max-size 14 --budget 400 --lam 0.5 -k 4 --test-frac 0.3 --n-estimators 60 --max-depth 8 --out ranker_deep.json
+
+This will take ~60 minutes but yields 150+ held-out targets. Then run the stability sweep on depth 5:
+
+powershell
+for ($S=0; $S -lt 10; $S++) { 
+  python predator5.py compare --depth 5 --seed $S --budget 400 --n-estimators 40 | Select-String "logistic reorder" 
+###########################################################################
+
+python setmm_parser.py --input set.mm --output theorems_full.json
+
+python setmm_parser.py --input set.mm --output theorems_full.json --limit 10000
+###########################################################################
+
+python metamath.py selftest              # verify the verifier, needs no files
+##
+cd "C:\google drive\Automated Theorem Proving"
+
+curl -o set.mm https://raw.githubusercontent.com/metamath/set.mm/develop/set.mm
+
+python metamath.py verify set.mm --limit 2000
+##
+
+
+python metamath.py verify set.mm         # check all 43k proofs
+python metamath.py show set.mm sbth      # one theorem: frame, proof, verdict
+python metamath.py stats set.mm          # corpus statistics
