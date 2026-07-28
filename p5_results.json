@@ -1,0 +1,47 @@
+{
+  "BFS (lam=0)": {
+    "n": 8,
+    "solved": 8,
+    "solve_rate": 1.0,
+    "mean_exp": 6.375,
+    "mean_len": 2.5,
+    "optimal": 8,
+    "opt_rate": 1.0
+  },
+  "logistic reorder": {
+    "n": 8,
+    "solved": 8,
+    "solve_rate": 1.0,
+    "mean_exp": 5.5,
+    "mean_len": 2.5,
+    "optimal": 8,
+    "opt_rate": 1.0
+  },
+  "logistic prune k=5": {
+    "n": 8,
+    "solved": 8,
+    "solve_rate": 1.0,
+    "mean_exp": 5.5,
+    "mean_len": 2.5,
+    "optimal": 8,
+    "opt_rate": 1.0
+  },
+  "forest reorder": {
+    "n": 8,
+    "solved": 8,
+    "solve_rate": 1.0,
+    "mean_exp": 5.625,
+    "mean_len": 2.5,
+    "optimal": 8,
+    "opt_rate": 1.0
+  },
+  "forest prune k=5": {
+    "n": 8,
+    "solved": 8,
+    "solve_rate": 1.0,
+    "mean_exp": 5.625,
+    "mean_len": 2.5,
+    "optimal": 8,
+    "opt_rate": 1.0
+  }
+}

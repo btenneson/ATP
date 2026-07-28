@@ -1,0 +1,395 @@
+% =============================================================================
+%  SAT and Groebner Bases --- Brian Tenneson --- Version 2, July 27, 2026
+%  Supersedes "Solving SAT in polynomial time?", April 11, 2023
+% =============================================================================
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=1in,top=1.1in,bottom=1.1in]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{url}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{algorithm}[theorem]{Algorithm}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\pagestyle{fancy}\fancyhf{}
+\lhead{\footnotesize SAT and Gr\"obner Bases}
+\rhead{\footnotesize Tenneson, Version 2, July 27, 2026}
+\lfoot{\footnotesize Copyright \textcopyright\ 2026 Brian Tenneson. All Rights Reserved.}
+\rfoot{\footnotesize btenneson2301.substack.com \quad \thepage}
+\renewcommand{\headrulewidth}{0.4pt}\renewcommand{\footrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}
+
+\newcommand{\FF}{\mathbf{F}_{2}}
+\newcommand{\PC}{F_{\mathrm{PC}}}
+\newcommand{\Res}{F_{\mathrm{res}}}
+
+\title{\vspace{-1.2cm}\textbf{\Large SAT and Gr\"obner Bases}\\[0.5em]
+{\large What the Algebraic Method Does and Does Not Buy}\\[0.6em]{\large Version 2}}
+\author{Brian Tenneson\\ M.S., Applied Data Science\\ Currently Unaffiliated\\
+email: \href{mailto:btenneson2301@baypath.edu}{btenneson2301@baypath.edu}}
+\date{July 27, 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{center}
+\fbox{\parbox{0.86\textwidth}{\centering\small
+Version 2 --- July 27, 2026\\[0.3em]
+Supersedes \emph{Solving SAT in Polynomial Time?}, Version 1, April 11, 2023\\[0.3em]
+Copyright \textcopyright\ 2026 Brian Tenneson. All Rights Reserved.\\[0.3em]
+\url{https://btenneson2301.substack.com}}}
+\end{center}
+
+\vspace{0.8em}
+\begin{abstract}
+\noindent
+Version 1 of this note proposed deciding satisfiability by arithmetizing a
+propositional formula $\varphi$ as a polynomial $\tau(\varphi)$ over $\FF$,
+forming the ideal $J=\langle\tau(\varphi)+1,\,x_{i}^{2}+x_{i}\rangle$, computing
+a Gr\"obner basis $G$ for $J$, and testing whether $1$ reduces to $0$ modulo
+$G$. It suggested that the Gr\"obner basis step might be performed in
+polynomial time by the \textsc{fglm} algorithm, and hence that
+$\mathrm{P}=\mathrm{NP}$.
+
+The arithmetization and the ideal-membership test are correct, and are proved
+correct here. The complexity claim is not, and this version withdraws it. Two
+independent errors are identified: \textsc{fglm} converts a Gr\"obner basis
+from one monomial order to another and cannot produce the first basis, which is
+the expensive object; and its running time is polynomial in the dimension of
+the quotient algebra $\FF[x]/J$, which counts satisfying assignments and is
+exponential in the number of variables. Beyond these, the approach is closed by
+a theorem rather than left open: Gr\"obner basis refutation of $J$ is exactly
+proof search in the Polynomial Calculus proof system, for which exponential
+lower bounds are known unconditionally.
+
+What survives is worth stating. Polynomial Calculus polynomially simulates
+resolution, so nothing is lost by working algebraically; it refutes Tseitin
+formulas in polynomial size where resolution requires exponential size, so
+something is strictly gained on parity-structured instances; and degree-$d$
+refutations are findable in time $n^{O(d)}$, so the obstruction is degree
+rather than the algebraic setting. The correct research question is not whether
+this method decides \textsc{sat} in polynomial time --- it does not --- but
+which families of formulas admit low-degree algebraic refutations.
+\end{abstract}
+
+\medskip
+\noindent\textbf{Keywords:} satisfiability, Gr\"obner basis, Boolean ideal,
+arithmetization, Polynomial Calculus, Nullstellensatz, proof complexity,
+resolution, Tseitin formulas, \textsc{fglm}, degree lower bounds.
+
+\section{The construction, and what is right about it}
+
+Let $\varphi$ be a propositional formula over $p_{1},\dots,p_{n}$.
+
+\begin{definition}[Arithmetization]\label{def:tau}
+Define $\tau(\varphi)\in\FF[x_{1},\dots,x_{n}]$ by recursion:
+\[
+\tau(p_{i}):=x_{i},\qquad \tau(\neg\varphi_{1}):=1+\tau(\varphi_{1}),
+\]
+\[
+\tau(\varphi_{1}\wedge\varphi_{2}):=\tau(\varphi_{1})\tau(\varphi_{2}),
+\qquad
+\tau(\varphi_{1}\vee\varphi_{2}):=1+\bigl(1+\tau(\varphi_{1})\bigr)\bigl(1+\tau(\varphi_{2})\bigr),
+\]
+all arithmetic in $\FF$. Put
+$J(\varphi):=\langle\,\tau(\varphi)+1,\;x_{1}^{2}+x_{1},\dots,x_{n}^{2}+x_{n}\,\rangle$.
+\end{definition}
+
+\begin{proposition}[Correctness]\label{prop:correct}
+For $a\in\{0,1\}^{n}$ we have $\tau(\varphi)(a)=1$ if and only if
+$a\models\varphi$. Consequently
+\[
+\varphi\ \text{is unsatisfiable}
+\iff 1\in J(\varphi)
+\iff \text{the reduced Gr\"obner basis of }J(\varphi)\text{ is }\{1\}.
+\]
+\end{proposition}
+
+\begin{proof}
+Induction on $\varphi$. A variable is its own indicator. For negation, $1+t=1$
+iff $t=0$. For conjunction, a product of elements of $\{0,1\}$ is $1$ iff both
+are $1$. For disjunction, $1+(1+t_{1})(1+t_{2})=1$ iff $(1+t_{1})(1+t_{2})=0$
+iff some $t_{i}=1$.
+
+The field equations $x_{i}^{2}+x_{i}$ force every common zero into
+$\{0,1\}^{n}$, so the variety of $J(\varphi)$ is the set of satisfying
+assignments. That variety is empty iff $J(\varphi)$ is the unit ideal --- the
+ideal is zero-dimensional and radical, since it contains the field equations,
+so the weak Nullstellensatz applies without a radical correction --- and an
+ideal is the unit ideal iff its reduced Gr\"obner basis in any monomial order
+is $\{1\}$.
+\end{proof}
+
+\begin{algorithm}[The procedure of Version 1]\label{alg:v1}
+On input $\varphi$: compute $\tau(\varphi)$; form $J(\varphi)$; compute a
+Gr\"obner basis $G$ of $J(\varphi)$; reduce $1$ modulo $G$; report
+\emph{unsatisfiable} if the reduction is $0$ and \emph{satisfiable} otherwise.
+\end{algorithm}
+
+\begin{remark}
+Algorithm~\ref{alg:v1} is a correct decision procedure, by
+Proposition~\ref{prop:correct}. Everything at issue is its running time, and
+that is entirely concentrated in the third step.
+\end{remark}
+
+\section{Why the complexity claim fails}
+
+Version 1 proposed to perform the Gr\"obner basis computation ``in polynomial
+time using the \textsc{fglm} algorithm.'' There are two separate problems with
+this, and then a third that is fatal independently of the first two.
+
+\subsection{\textsc{fglm} is a change of order, not a computation from scratch}
+
+The algorithm of Faug\`ere, Gianni, Lazard and Mora \cite{fglm} takes as
+\emph{input} a Gr\"obner basis of a zero-dimensional ideal with respect to one
+monomial order and returns a Gr\"obner basis with respect to another --- in
+practice, from a fast degree order to the lexicographic order convenient for
+elimination. It presupposes the object whose cost is in question. Using it as
+the step that computes $G$ is circular: the first basis must be obtained by
+Buchberger's algorithm or a descendant such as $F_{4}$ or $F_{5}$, and that is
+where the work is.
+
+\subsection{Its running time is polynomial in the wrong parameter}
+
+\textsc{fglm} runs in time $O(nD^{3})$, where
+\[
+D=\dim_{\FF}\bigl(\FF[x_{1},\dots,x_{n}]/J\bigr).
+\]
+For a zero-dimensional radical ideal $D$ is the number of points of the
+variety, so here $D$ is the number of satisfying assignments of $\varphi$.
+This is at most $2^{n}$ and is routinely close to it. Being polynomial in $D$
+is not being polynomial in $n$: already the field equations alone give
+$\dim_{\FF}\FF[x]/\langle x_{i}^{2}+x_{i}\rangle=2^{n}$.
+
+The mistake is a substitution of parameters. ``Polynomial time'' in the
+computer-algebra literature is frequently relative to the quotient dimension or
+to the B\'ezout number, not to the bit length of the input, and the two
+coincide only for ideals with few solutions.
+
+\subsection{The approach is closed by a theorem}
+
+The decisive point is not that the two objections above might be circumvented
+by a better algorithm. It is that the method as a whole is a known proof system
+with known lower bounds.
+
+\begin{definition}[Polynomial Calculus]\label{def:pc}
+Over a field $K$, the \emph{Polynomial Calculus} $\PC$ has as its formulas the
+multilinear polynomials of $K[x_{1},\dots,x_{n}]/\langle x_{i}^{2}-x_{i}\rangle$
+and as its rules
+\[
+(f,g)\longmapsto \alpha f+\beta g\ \ (\alpha,\beta\in K),
+\qquad
+f\longmapsto x_{i}f .
+\]
+A \emph{refutation} of a set of polynomials is a derivation of $1$. Its
+\emph{size} is the total number of monomials and its \emph{degree} is the
+largest total degree occurring in it.
+\end{definition}
+
+\begin{proposition}\label{prop:gbispc}
+Every run of Buchberger's algorithm on $J(\varphi)$ that outputs $\{1\}$ is a
+$\PC$ refutation of the generators of $J(\varphi)$, of size at most the number
+of monomials the run writes down.
+\end{proposition}
+
+\begin{proof}
+The algorithm forms $S$-polynomials and reduces them. An $S$-polynomial of $f$
+and $g$ is $m_{f}f-m_{g}g$ for monomials $m_{f},m_{g}$, which is a composition
+of multiplications by variables followed by one linear combination; a reduction
+step subtracts a monomial multiple of a basis element, likewise. Every
+intermediate polynomial produced is therefore derivable by the two rules of
+Definition~\ref{def:pc} from the generators, and $1$ is among them exactly when
+the output basis is $\{1\}$.
+\end{proof}
+
+\begin{theorem}[Lower bounds]\label{thm:lower}
+Let $\Gamma_{n}$ be the arithmetized pigeonhole principle
+$\mathrm{PHP}_{n}^{n-1}$. Every $\PC$ refutation of $\Gamma_{n}$ has degree
+$\Omega(n)$, and there is $c>0$ such that every $\PC$ refutation of
+$\Gamma_{n}$ has size at least $2^{cn}$. The corresponding statement holds
+almost surely for random $3$-CNF formulas at constant density above the
+satisfiability threshold.
+\end{theorem}
+
+\begin{proof}[Attribution]
+The degree bound is Razborov's \cite{razborov}; the size bound follows by the
+size--degree tradeoff of Impagliazzo, Pudl\'ak and Sgall \cite{ips}, whose
+paper is titled for this consequence. The random-formula statement is
+Ben-Sasson and Impagliazzo \cite{bsi}. The proof system was introduced, and its
+identification with the Gr\"obner basis algorithm made, by Clegg, Edmonds and
+Impagliazzo \cite{clegg}.
+\end{proof}
+
+\begin{corollary}\label{cor:nopoly}
+Algorithm~\ref{alg:v1} does not run in time polynomial in $|\varphi|$, and no
+variant of it that decides unsatisfiability by exhibiting $1$ in the ideal
+does. This is unconditional: it assumes no complexity-theoretic hypothesis, and
+in particular does not depend on $\mathrm{P}\ne\mathrm{NP}$.
+\end{corollary}
+
+\begin{proof}
+On input $\Gamma_{n}$ the algorithm's run is a $\PC$ refutation by
+Proposition~\ref{prop:gbispc}, and its running time is at least the number of
+monomials it writes. By Theorem~\ref{thm:lower} that number is $2^{\Omega(n)}$,
+while $|\Gamma_{n}|$ is polynomial in $n$.
+\end{proof}
+
+\begin{remark}[The claim of Version 1 is withdrawn]
+Corollary~\ref{cor:nopoly} settles the question the earlier version left open,
+in the negative. The route from Gr\"obner bases to $\mathrm{P}=\mathrm{NP}$ is
+not merely unproved; it is blocked by a theorem proved in 1999. It should be
+added that this is a good outcome for the method as mathematics: a technique
+with an exponential lower bound is a technique whose behaviour is understood.
+\end{remark}
+
+\section{What survives}
+
+The lower bounds are worst-case statements, and the algebraic method retains
+three properties that clause-based methods do not have. These, and not the
+complexity claim, are the reason to be interested in it.
+
+\begin{theorem}[Simulation]\label{thm:sim}
+$\PC$ polynomially simulates resolution over every field, and the degree of the
+simulating refutation equals the width of the resolution refutation simulated.
+Hence nothing is given up by working algebraically.
+\end{theorem}
+
+\begin{proof}[Attribution and sketch]
+Translate a clause $\bigvee_{i\in P}p_{i}\vee\bigvee_{j\in N}\neg p_{j}$ to the
+monomial $\prod_{i\in P}(1-x_{i})\prod_{j\in N}x_{j}$, which vanishes exactly
+on the assignments satisfying the clause. A resolution step becomes a bounded
+number of applications of the two rules. Due to Clegg, Edmonds and Impagliazzo
+\cite{clegg}.
+\end{proof}
+
+\begin{theorem}[Strict gain on parity structure]\label{thm:tseitin}
+Let $T_{n}$ be the Tseitin formula of a bounded-degree expander graph on $n$
+vertices with odd total charge. Then $T_{n}$ has $\PC$ refutations of
+polynomial size over $\FF$, while every resolution refutation of $T_{n}$ has
+size $2^{\Omega(n)}$.
+\end{theorem}
+
+\begin{proof}[Attribution and sketch]
+Over $\FF$ the parity constraint at a vertex $v$ is the linear polynomial
+$\sum_{e\ni v}x_{e}+\sigma(v)$. Summing these over all vertices makes each edge
+variable occur twice and cancel, leaving $\sum_{v}\sigma(v)=1$: a refutation
+using one linear combination per vertex and no multiplications whatever. The
+exponential resolution lower bound is Urquhart's \cite{urquhart}.
+\end{proof}
+
+\begin{corollary}
+$\Res\preceq_{\mathrm{p}}\PC$ but $\PC\not\preceq_{\mathrm{p}}\Res$: the
+algebraic system is strictly stronger than resolution.
+\end{corollary}
+
+\begin{theorem}[Bounded degree is tractable]\label{thm:degree}
+For fixed $d$ there is an algorithm running in time $n^{O(d)}$ which finds a
+$\PC$ refutation of degree at most $d$ whenever one exists.
+\end{theorem}
+
+\begin{proof}[Sketch]
+Multilinear polynomials of degree $\le d$ in $n$ variables span a space of
+dimension $\sum_{j\le d}\binom{n}{j}=n^{O(d)}$. Closing the input under
+multiplication by variables and taking linear spans, discarding anything of
+degree above $d$, is Gaussian elimination on a matrix of that side length; $1$
+is derivable in degree $d$ iff it lands in the span \cite{clegg}.
+\end{proof}
+
+\begin{remark}[The question that replaces the original one]\label{rem:newq}
+Theorem~\ref{thm:degree} localizes the difficulty. The algebraic setting is not
+itself the obstruction; \emph{degree} is. Where a family of formulas admits
+refutations of bounded degree, those refutations are found in polynomial time
+for each fixed bound, and Theorem~\ref{thm:tseitin} exhibits a natural family
+admitting refutations of degree $1$. The productive question is therefore:
+
+\begin{center}
+\emph{Which families of propositional formulas admit low-degree Polynomial
+Calculus refutations?}
+\end{center}
+
+\noindent This is answerable, is being answered, and has the property the
+original question lacked --- that partial progress on it is progress. By
+contrast, Theorem~\ref{thm:lower} tells us in advance that the answer is not
+``all of them.''
+\end{remark}
+
+\begin{remark}[On the Boolean-ring presentation]
+Carrying the field equations as explicit generators, as in
+Definition~\ref{def:tau}, is one of several presentations. Boolean Gr\"obner
+basis theory works directly in the quotient ring, and admits coefficient rings
+that are themselves Boolean rather than fields \cite{sato}. This is often
+substantially better in practice and is the right setting for implementation.
+It does not affect any statement above: the lower bounds of
+Theorem~\ref{thm:lower} are proved for the proof system, not for a particular
+data structure.
+\end{remark}
+
+\section{Summary}
+
+\begin{center}
+\begin{tabular}{@{}p{0.42\textwidth}p{0.5\textwidth}@{}}
+\hline
+\textbf{Claim of Version 1} & \textbf{Status} \\
+\hline
+The arithmetization $\tau$ is correct
+& Correct; Proposition~\ref{prop:correct}. \\
+$\varphi$ unsatisfiable iff $1$ reduces to $0$ mod $G$
+& Correct; Proposition~\ref{prop:correct}. \\
+\textsc{fglm} computes $G$ in polynomial time
+& False twice over: \textsc{fglm} converts an existing basis, and is polynomial in the quotient dimension, which is exponential in $n$. \\
+Hence $\mathrm{P}=\mathrm{NP}$
+& Withdrawn. Corollary~\ref{cor:nopoly} shows the method is exponential on the pigeonhole family, unconditionally. \\
+\hline
+\textbf{Retained} & \\
+\hline
+Algebraic methods subsume clause methods
+& Theorem~\ref{thm:sim}. \\
+Algebraic methods strictly beat resolution somewhere
+& Theorem~\ref{thm:tseitin}, on Tseitin formulas. \\
+Low-degree refutations are efficiently findable
+& Theorem~\ref{thm:degree}. \\
+\hline
+\end{tabular}
+\end{center}
+
+\bigskip
+\noindent This note is a companion to Section 10 of \emph{Depths of a
+Simulation and Formalized Self-Awareness}, Merged Edition, where the same
+material is developed inside the formal-system vocabulary $F=(x,y,z)$ and the
+Tseitin separation is recorded as a second unconditional instance of the
+Two-System Size-Speedup Principle.
+
+\section*{Acknowledgements}
+The author thanks AI assistants used as editorial and verification tools during
+the preparation of this revision, in particular for the identification of the
+two \textsc{fglm} errors and the location of the relevant lower bounds. All
+mathematical claims, interpretations, and final decisions remain the
+responsibility of the author.
+
+\begin{thebibliography}{99}
+\bibitem{bsi} Ben-Sasson, E., \& Impagliazzo, R. (1999). Random CNF's are hard for the polynomial calculus. In \textit{Proceedings of the 40th Annual Symposium on Foundations of Computer Science} (pp. 415--421). IEEE.
+\bibitem{clegg} Clegg, M., Edmonds, J., \& Impagliazzo, R. (1996). Using the Groebner basis algorithm to find proofs of unsatisfiability. In \textit{Proceedings of the Twenty-Eighth Annual ACM Symposium on the Theory of Computing} (pp. 174--183). ACM.
+\bibitem{cr} Cook, S. A., \& Reckhow, R. A. (1979). The relative efficiency of propositional proof systems. \textit{Journal of Symbolic Logic}, 44(1), 36--50.
+\bibitem{fglm} Faug\`ere, J.-C., Gianni, P., Lazard, D., \& Mora, T. (1993). Efficient computation of zero-dimensional Gr\"obner bases by change of ordering. \textit{Journal of Symbolic Computation}, 16(4), 329--344.
+\bibitem{ips} Impagliazzo, R., Pudl\'ak, P., \& Sgall, J. (1999). Lower bounds for the polynomial calculus and the Gr\"obner basis algorithm. \textit{Computational Complexity}, 8(2), 127--144.
+\bibitem{razborov} Razborov, A. A. (1998). Lower bounds for the polynomial calculus. \textit{Computational Complexity}, 7(4), 291--324.
+\bibitem{sato} Sato, Y., Inoue, S., Suzuki, A., Nabeshima, K., \& Sakai, K. (2011). Boolean Gr\"obner bases. \textit{Journal of Symbolic Computation}, 46(5), 622--632.
+\bibitem{urquhart} Urquhart, A. (1987). Hard examples for resolution. \textit{Journal of the ACM}, 34(1), 209--219.
+\end{thebibliography}
+
+\end{document}

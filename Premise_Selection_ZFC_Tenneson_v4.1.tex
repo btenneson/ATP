@@ -1,0 +1,626 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=1in,top=1.2in,bottom=1.15in]{geometry}
+\usepackage[utf8]{inputenc}\usepackage[T1]{fontenc}\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm}\usepackage{mathtools}\usepackage{graphicx}
+\usepackage{enumitem}\usepackage{fancyhdr}\usepackage{microtype}\usepackage{booktabs}
+\usepackage{lastpage}\usepackage{listings}\usepackage{caption}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{url}
+\lstset{basicstyle=\ttfamily\scriptsize,breaklines=true,frame=single,columns=flexible}
+\captionsetup{font=small,labelfont=bf}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{lemma}[theorem]{Lemma}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{observation}[theorem]{Observation}
+
+\newcommand{\tg}[1]{\langle #1\rangle}
+\newcommand{\pow}{\mathcal{P}}
+\newcommand{\Conop}{\operatorname{Con}}
+\newcommand{\Np}{\mathbf{N}^{+}}
+
+\pagestyle{fancy}\fancyhf{}
+\lhead{\footnotesize Premise Selection over ZFC by Learning to Rank}
+\rhead{\footnotesize Tenneson \quad$\vert$\quad Version 4.1 \quad$\vert$\quad July 28, 2026}
+\lfoot{\footnotesize Copyright \textcopyright\ 2026 Brian Tenneson. All Rights Reserved.}
+\cfoot{\footnotesize btenneson2301.substack.com}
+\rfoot{\footnotesize Page \thepage\ of \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}\renewcommand{\footrulewidth}{0.4pt}
+\setlength{\headheight}{14pt}\setlength{\footskip}{28pt}
+
+\title{\vspace{-1cm}\textbf{\Large Premise Selection over ZFC by Learning to Rank}\\[0.5em]
+{\large Search Effort as the Governing Metric,\\ with Case Studies in Metamath's \texttt{set.mm}}}
+\author{Brian Tenneson\\ M.S., Applied Data Science\\ Currently Unaffiliated\\
+\href{mailto:btenneson2301@baypath.edu}{btenneson2301@baypath.edu}}
+\date{Version 4.1 \quad$\bullet$\quad July 28, 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\begin{abstract}
+\noindent
+An automated theorem prover working inside a large formal library spends most of
+its effort deciding which of tens of thousands of established results bear on the
+goal in front of it. We treat that decision as a ranking problem over Metamath's
+\texttt{set.mm}, a formalisation of ZFC containing on the order of $43{,}900$
+proved theorems, and make three contributions.
+
+First, a metric. Premise selectors are conventionally scored by recall at a
+fixed cutoff, which measures the head of the ranking and is silent about its
+tail. We argue that the governing quantity for a prover is \emph{search effort}:
+the fraction of the candidate pool that must be examined before every premise of
+a proof has been found, since that is the point at which search may stop. Recall
+and effort are independent --- a ranker can excel at one and fail at the other
+--- so both are reported throughout, against two baselines that a learned model
+must beat to justify itself.
+
+Second, a method. We fit a linear scorer by a pairwise ranking loss over
+candidate pairs drawn from a single goal, rather than by classifying
+(goal, candidate) pairs independently. Since every reported quantity depends
+only on the order induced within one goal, this aligns the training objective
+with the measurement. It also has a structural consequence, isolated as
+Proposition~\ref{prop:cancel}: features that are constant across a goal's
+candidates cancel identically and cannot receive weight, so a class of silently
+uninformative feature is excluded by construction rather than by inspection.
+
+Third, evidence. On the first $8{,}000$ statements of \texttt{set.mm} under a
+temporal split, the ranker attains recall@$10$ of $0.232$ and recall@$50$ of
+$0.491$ against $0.174$ and $0.233$ for the strongest baseline, and reduces
+search effort from $0.926$ to $0.387$ --- from reading $2{,}779$ of $3{,}000$
+candidates to reading $1{,}161$. Four worked case studies show where the gain
+comes from and where it does not: premises sharing notation with the goal are
+retrieved at ranks $1$ to $6$ out of several thousand, while premises stated in
+notation absent from the goal are retrieved in the hundreds. We identify that
+asymmetry as the principal obstacle to further progress and propose co-citation
+over the premise graph as the natural remedy.
+\end{abstract}
+
+\medskip
+\noindent\textbf{Keywords:} premise selection, learning to rank, automated
+theorem proving, Metamath, ZFC, search effort, proof libraries, RankNet,
+co-citation.
+
+\newpage
+\tableofcontents
+\newpage
+
+\section{Introduction}\label{sec:intro}
+
+A theorem prover operating on a small axiom set can afford to search
+exhaustively. One operating inside a formal library cannot. Modern libraries ---
+Metamath's \texttt{set.mm}, Isabelle's Archive of Formal Proofs, Lean's Mathlib
+--- contain tens or hundreds of thousands of established results, and the
+dominant cost of proving a new statement is not applying an inference rule but
+deciding \emph{which} of those results to apply it to. This is the premise
+selection problem, and it is why interactive provers ship with tools such as
+Sledgehammer \cite{sledgehammer} whose function is precisely to guess a short
+list of relevant lemmas.
+
+This paper studies premise selection over ZFC as formalised in \texttt{set.mm}
+\cite{megill}. The choice of corpus is deliberate and is discussed in
+Section~\ref{sec:corpus}: a Metamath proof is literally a list of label
+references, so the premise relation is recorded in the file rather than inferred,
+and no proof reconstruction or natural-language processing intervenes between the
+data and the learning problem.
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=1.5em,itemsep=3pt]
+\item \textbf{Search effort as the governing metric}
+(Section~\ref{sec:metrics}). We define effort as the depth to which a ranking
+must be read before every true premise has been seen, argue that this rather
+than recall is what a prover experiences, and show that the two quantities
+diverge sharply in practice.
+
+\item \textbf{A ranking formulation} (Section~\ref{sec:method}). We fit the
+scorer by a pairwise loss over candidates of a common goal.
+Proposition~\ref{prop:cancel} records a structural benefit: goal-constant
+features cannot absorb weight.
+
+\item \textbf{Typecode separation as a preprocessing requirement}
+(Section~\ref{sec:corpus}). In Metamath, references to syntax constructors
+outnumber references to mathematics by a factor approaching one in two. We
+quantify this and show that failing to separate them changes both what the data
+look like and what a model learns.
+
+\item \textbf{Empirical results with worked case studies}
+(Sections~\ref{sec:results}--\ref{sec:cases}). Aggregate figures on
+\texttt{set.mm} are accompanied by four theorems examined premise by premise,
+which localise the method's strength and its failure mode more precisely than
+averages can.
+\end{enumerate}
+
+\section{The corpus and the premise relation}\label{sec:corpus}
+
+\subsection{Metamath}
+
+A Metamath database is a sequence of statements. Each is introduced by a label
+and asserts a string of tokens, the first of which is its \emph{typecode}. Two
+kinds concern us. A statement whose typecode is \verb!|-! asserts provability; one
+whose typecode is \texttt{wff}, \texttt{class} or \texttt{setvar} asserts that a
+string is well formed. Axioms are marked \texttt{\$a} and proved statements
+\texttt{\$p}, and a proved statement carries its proof as a list of the labels it
+invokes.
+
+\begin{definition}[Premise relation]\label{def:premise}
+Let $C=(t_0,\dots,t_{N-1})$ be a Metamath database in file order. For a proved
+statement $t_i$ let $R(t_i)$ be the set of labels its proof references. The
+\emph{premises} of $t_i$ are
+\[
+P(t_i)\;=\;\{\,t_j \;:\; j<i,\ \text{label}(t_j)\in R(t_i),\ \text{typecode}(t_j)=\ \text{\texttt{|-}}\,\}.
+\]
+The remaining references, those to statements of syntactic typecode, are the
+\emph{syntactic references} of $t_i$.
+\end{definition}
+
+\subsection{Why the typecodes must be separated}
+
+Definition~\ref{def:premise} restricts to logical typecode, and this restriction
+is not cosmetic.
+
+\begin{observation}[Syntactic references dominate]\label{obs:syntax}
+In the first $8{,}000$ statements of \texttt{set.mm}, of $83{,}923$ total
+references $35{,}902$ --- $42.8\%$ --- are to statements of syntactic typecode.
+Counting them as premises raises the mean number of premises per proof from
+$6.2$ to $10.8$.
+\end{observation}
+
+The reason is structural rather than incidental. Metamath requires a proof to
+construct its formulas before asserting anything about them, so the constructors
+for implication, conjunction, membership and equality are invoked by essentially
+every proof in the library, independently of its subject. Table~\ref{tab:cited}
+makes the effect visible: computed over all references, the most-cited labels are
+uniformly grammatical; computed over logical references only, they are the
+inference lemmas one would expect.
+
+\begin{table}[htbp]\centering
+\small
+\begin{tabular}{@{}llrllr@{}}
+\toprule
+\multicolumn{3}{c}{\textbf{all references}} & \multicolumn{3}{c}{\textbf{logical references only}}\\
+\cmidrule(r){1-3}\cmidrule(l){4-6}
+label & role & count & label & role & count\\
+\midrule
+\texttt{wcel} & syntax: $A\in B$ is a wff & 2946 & \texttt{syl} & syllogism & 775\\
+\texttt{wa}   & syntax: conjunction & 2790 & \texttt{bitri} & biconditional transitivity & 641\\
+\texttt{wceq} & syntax: equality & 2545 & \texttt{ax-mp} & modus ponens & 482\\
+\texttt{cv}   & syntax: setvar as class & 2365 & \texttt{a1i} & antecedent introduction & 348\\
+\texttt{wi}   & syntax: implication & 1814 & \texttt{ex} & exportation & 342\\
+\texttt{wn}   & syntax: negation & 1314 & \texttt{vex} & setvar existence & 322\\
+\bottomrule
+\end{tabular}
+\caption{Most-referenced labels in the first $8{,}000$ statements of
+\texttt{set.mm}. Without typecode separation the premise relation is dominated by
+grammar; a model fitted to it learns to predict punctuation.}
+\label{tab:cited}
+\end{table}
+
+\begin{remark}[Generality]
+The same distinction arises in any system separating syntax from assertion. In
+Isabelle and Lean it is largely handled by the elaborator and is invisible in the
+proof term; in Metamath it is explicit in the file, which is convenient for the
+present purpose but requires the filter of Definition~\ref{def:premise}.
+\end{remark}
+
+\subsection{Corpus statistics}
+
+After separation, the first $8{,}000$ statements comprise $7{,}899$ logical
+statements and $101$ syntactic ones, with $48{,}021$ logical references. Proofs
+cite a mean of $6.2$ premises, median $4$, maximum $101$; the distribution of
+citations is heavily skewed, with a small number of inference lemmas appearing
+in hundreds of proofs and the majority of statements cited once or twice.
+
+\section{Metrics}\label{sec:metrics}
+
+Fix a goal $g$ with true premise set $G$, and a candidate pool $\Pi$ of
+statements available to it. A selector induces a total order $\rho$ on $\Pi$.
+
+\begin{definition}[Recall]\label{def:recall}
+$\displaystyle \mathrm{recall}@k \;=\; \frac{|G\cap\{\rho_1,\dots,\rho_k\}|}{|G|}$.
+\end{definition}
+
+\begin{definition}[Search effort]\label{def:effort}
+$\displaystyle \mathrm{effort} \;=\; \frac{\max\{\,r : \rho_r\in G\,\}}{|\Pi|}$,
+the depth to which the ranking must be read before every premise has been seen.
+\end{definition}
+
+\begin{remark}[Why effort is the governing quantity]\label{rem:whyeffort}
+Recall@$k$ describes the head of a ranking. It is the right measure for a system
+that will be handed a fixed-size shortlist and must do the best it can with it.
+It is the wrong measure for a prover that needs \emph{all} the premises of a
+proof, because such a prover cannot stop at $k$: if one premise lies at rank
+$2{,}000$, a ranking that placed the other four at ranks $1$ to $4$ has saved it
+nothing. Effort measures exactly the stopping point.
+
+The two are independent. A ranking with four premises at ranks $1$--$4$ and the
+fifth at $2{,}000$ has excellent recall@$5$ and effort near $1$; a ranking with
+all five at ranks $40$--$50$ has poor recall@$5$ and good effort. Neither implies
+the other, and Section~\ref{sec:results} exhibits both patterns in the same
+experiment.
+\end{remark}
+
+\begin{definition}[Baselines]\label{def:baselines}
+Two orderings serve as controls. \emph{Frequency} sorts candidates by how often
+each has been cited in the training prefix. \emph{Chronological} sorts by
+recency, most recently proved first; since a library is developed topically, a
+goal's premises are frequently among the statements proved shortly before it,
+and reading the library backwards is a strong and entirely unlearned strategy.
+We treat chronological order as the brute-force benchmark.
+\end{definition}
+
+\begin{remark}[Both metrics against both baselines]
+A single number invites a misleading summary in either direction. Reporting
+effort alone flatters a selector that returns a short list and misses premises;
+reporting recall alone flatters one that finds the easy premises and buries a
+hard one. We therefore report both, against both baselines, throughout.
+\end{remark}
+
+\section{Method}\label{sec:method}
+
+\subsection{Ranking rather than classification}
+
+The natural first formulation treats premise selection as binary
+classification: fit $\Pr(\text{premise}\mid g,c)$ over (goal, candidate) pairs
+and sort candidates by the fitted probability. We adopt a ranking formulation
+instead, for a reason visible in Definitions~\ref{def:recall}
+and~\ref{def:effort}: every reported quantity is a function of the order induced
+\emph{within a single goal}. Absolute probabilities are never compared across
+goals and never consulted; only their relative order within a goal is.
+
+\begin{definition}[Pairwise ranking loss]\label{def:ranknet}
+Let $g$ be a goal, $p\in P(g)$ a premise, $n\notin P(g)$ a non-premise available
+to $g$, and $x_p,x_n\in\mathbf{R}^d$ their feature vectors. The scorer is linear,
+$s(x)=w\cdot x$. We fit $w$ by logistic regression on difference vectors,
+\[
+\sigma\bigl(w\cdot(x_p-x_n)\bigr)\to 1,
+\qquad
+\sigma\bigl(w\cdot(x_n-x_p)\bigr)\to 0,
+\]
+over all pairs $(p,n)$ drawn from a common goal, where
+$\sigma(z)=(1+e^{-z})^{-1}$. This is RankNet \cite{burges} with a linear
+scorer; the antisymmetric second family of examples prevents the objective from
+being satisfied by a uniform inflation of scores.
+\end{definition}
+
+\begin{proposition}[Goal-constant features cannot receive weight]\label{prop:cancel}
+Suppose a feature coordinate $j$ satisfies $x_c^{(j)}=\kappa_g$ for every
+candidate $c$ available to a goal $g$, with $\kappa_g$ depending on $g$ alone.
+Then the $j$th coordinate of every difference vector formed from $g$ is zero, the
+partial derivative of the loss with respect to $w_j$ vanishes on every such
+example, and $w_j$ is unaffected by the data.
+\end{proposition}
+
+\begin{proof}
+For any pair $(p,n)$ of candidates of $g$ we have
+$x_p^{(j)}-x_n^{(j)}=\kappa_g-\kappa_g=0$. The loss depends on $w$ only through
+the inner products $w\cdot(x_p-x_n)$, whose derivative with respect to $w_j$ is
+the $j$th coordinate of the difference vector, namely zero. Summing over
+examples, $\partial\mathcal{L}/\partial w_j=0$ identically.
+\end{proof}
+
+\begin{remark}[Consequence for feature design]\label{rem:cancel}
+Proposition~\ref{prop:cancel} is a modest observation with a practical use. A
+feature depending only on the goal --- the goal's length, its depth in the
+library, the number of its premises --- is uninformative for ranking, since it
+shifts every candidate's score by the same amount. Under a classification
+objective such a feature can nonetheless acquire a large coefficient, because it
+genuinely predicts the class marginal, and will appear informative in a table of
+learned weights. Under Definition~\ref{def:ranknet} it is excluded by
+construction. The point generalises: the ranking formulation restricts the model
+to exactly the information that can affect the reported metrics.
+\end{remark}
+
+\subsection{Features}\label{sec:features}
+
+All features are properties of a (goal, candidate) pair and are computable from
+the database without proof reconstruction. Writing $S_g,S_c$ for the token sets
+of goal and candidate:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+\item \emph{Symbol overlap}, $|S_g\cap S_c|/|S_g\cup S_c|$, and the two
+asymmetric variants $|S_g\cap S_c|/|S_c|$ and $|S_g\cap S_c|/|S_g|$.
+\item \emph{Literal occurrence}: whether the candidate's statement occurs as a
+substring of the goal's.
+\item \emph{Citation frequency}: $\log(1+u_c)$ where $u_c$ counts citations of
+$c$ in the reference prefix.
+\item \emph{Recency}: the positional gap between goal and candidate.
+\item \emph{Size}: the candidate's length, and its ratio to the goal's.
+\item \emph{Rare-symbol sharing}: whether goal and candidate share a token in the
+lowest quartile of corpus frequency.
+\item \emph{Local co-citation}: how often the candidate is cited by the $40$
+statements immediately preceding the goal.
+\item \emph{Co-citation with anchors}: see Section~\ref{sec:cocite}.
+\end{enumerate}
+
+\subsection{Negative sampling}\label{sec:negatives}
+
+Training pairs require non-premises, and their selection is not neutral. Uniform
+sampling from the available prefix supplies negatives that are almost all
+trivially irrelevant --- on a corpus of tens of thousands, a random statement
+bears no relation to a given goal --- so a model trained against them learns to
+reject the unrelated rather than to discriminate among the plausible, which is
+the operative task.
+
+We therefore draw a majority of negatives from the most-cited statements of the
+reference prefix: lemmas that are plausible for any goal because they are used
+everywhere, and which the model must learn to rank \emph{below} the goal's actual
+premises.
+
+\begin{remark}[Negatives must be selected orthogonally to the features]\label{rem:orthogonal}
+A design constraint deserves emphasis, as it is easy to violate. If negatives are
+sampled by a criterion that some feature also measures, that feature becomes a
+detector for the sampling procedure. Concretely: drawing hard negatives from the
+premises of the $40$ statements preceding the goal, while also supplying a
+feature counting citations within that same window, makes the feature predict
+membership in the negative class almost perfectly --- and a correctly fitted
+model will assign it a large negative weight, degrading performance on genuine
+data where no such relationship holds. Selecting negatives by global citation
+frequency, a quantity no locality feature computes, avoids the coupling.
+\end{remark}
+
+\subsection{Protocol}\label{sec:protocol}
+
+\begin{definition}[Temporal split]\label{def:split}
+Given a corpus in derivation order and a fraction $p$, the first $\lfloor pN\rfloor$
+statements supply training goals and the remainder supply test goals. A random
+split would allow the model to train on statements postdating its test goals,
+which does not correspond to any deployment condition.
+\end{definition}
+
+\begin{definition}[Reference prefix]\label{def:refcut}
+Several features --- citation frequency, symbol rarity, co-citation --- are
+defined relative to a corpus. The prefix over which these are computed, the
+\emph{reference prefix}, is specified separately from the training cut and held
+fixed across any experiment that varies the amount of training data, so that a
+feature denotes the same quantity during fitting and scoring.
+\end{definition}
+
+\section{Results}\label{sec:results}
+
+We report on the first $8{,}000$ statements of \texttt{set.mm}, temporal split at
+$p=0.8$, $200$ held-out goals, candidate pools of $3{,}000$.
+
+\begin{table}[htbp]\centering
+\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+& \textbf{ranker} & frequency & chronological & fused \\
+\midrule
+recall@1  & 0.051 & 0.036 & \textbf{0.085} & 0.053 \\
+recall@5  & \textbf{0.155} & 0.092 & 0.146 & 0.123 \\
+recall@10 & \textbf{0.232} & 0.131 & 0.174 & 0.168 \\
+recall@50 & \textbf{0.491} & 0.279 & 0.233 & 0.476 \\
+\midrule
+effort & 0.387 & --- & 0.926 & \textbf{0.321} \\
+candidates read (of 3000) & 1161 & --- & 2779 & \textbf{964} \\
+\bottomrule
+\end{tabular}
+\caption{Aggregate performance on \texttt{set.mm}. The fused column is
+reciprocal-rank fusion of the learned ranking with the frequency ordering.}
+\label{tab:agg}
+\end{table}
+
+\begin{observation}[The baseline wins at the head]\label{obs:head}
+Chronological order attains the best recall@$1$, at $0.085$ against the ranker's
+$0.051$. A library's most recently proved statement is a strong single guess,
+because development proceeds topically and a new theorem commonly uses the lemma
+established immediately before it. No learned model in our experiments displaced
+this baseline at $k=1$.
+\end{observation}
+
+\begin{observation}[The learned ranker wins everywhere else]\label{obs:tail}
+From $k=5$ upward the ordering reverses and the margin widens: at $k=50$ the
+ranker recovers $0.491$ of premises against $0.233$ for chronological order, a
+factor of $2.1$. On effort the difference is starker still: the ranker requires
+$1{,}161$ of $3{,}000$ candidates against $2{,}779$, and rank fusion with the
+frequency ordering reduces this to $964$.
+\end{observation}
+
+\begin{remark}[Reading the two together]
+Observations~\ref{obs:head} and \ref{obs:tail} are the empirical content of
+Remark~\ref{rem:whyeffort}. Chronological order is better at its first guess and
+much worse at completing the set. A system permitted one attempt should read the
+library backwards; a system that must assemble every premise of a proof should
+use the learned ranking, and the difference between them --- roughly $1{,}600$
+candidates of reading --- is the practical contribution.
+\end{remark}
+
+\section{Case studies}\label{sec:cases}
+
+Aggregate figures conceal structure. We examine four theorems of \texttt{set.mm}
+premise by premise; in each the candidate pool is every logical statement
+preceding the goal, several thousand in size.
+
+\begin{table}[htbp]\centering
+\small
+\begin{tabular}{@{}llrrr@{}}
+\toprule
+theorem & statement & ranker & frequency & chronological\\
+\midrule
+\texttt{prcom} & $\{A,B\}=\{B,A\}$ & \textbf{0.080} & 0.978 & 0.404\\
+\texttt{uncom} & $(A\cup B)=(B\cup A)$ & \textbf{0.077} & 1.000 & 0.932\\
+\texttt{unass} & $((A\cup B)\cup C)=(A\cup(B\cup C))$ & \textbf{0.285} & 0.997 & 0.933\\
+\texttt{elpri} & $A\in\{B,C\}\rightarrow(A=B\vee A=C)$ & \textbf{0.135} & 1.000 & 0.942\\
+\bottomrule
+\end{tabular}
+\caption{Search effort on four theorems. Lower is better; the ranker improves on
+the better baseline by factors of $3.3$ to $12.1$.}
+\label{tab:cases}
+\end{table}
+
+\begin{example}[Commutativity of unordered pairs]\label{ex:prcom}
+The statement $\{A,B\}=\{B,A\}$ has a three-premise proof: \texttt{df-pr}, that
+$\{A,B\}=\{A\}\cup\{B\}$; \texttt{uncom}, that union commutes; and
+\texttt{3eqtr4i}, chaining three equalities. The argument is
+$\{A,B\}=\{A\}\cup\{B\}=\{B\}\cup\{A\}=\{B,A\}$.
+
+Out of $4{,}643$ candidates the ranker places \texttt{df-pr} at rank $2$,
+\texttt{3eqtr4i} at $150$ and \texttt{uncom} at $372$; frequency places them at
+$4541$, $1036$ and $4067$. The definitional premise is found almost immediately,
+because the goal contains the literal tokens $\{\,A\,,\,B\,\}=$ and so does
+\texttt{df-pr}.
+\end{example}
+
+\begin{observation}[Where the method succeeds]\label{obs:succeed}
+Across the four theorems, premises sharing notation with the goal are retrieved
+at ranks $1$ to $6$: \texttt{uneqri} at $1$ and \texttt{elun} at $3$ for
+\texttt{uncom}; \texttt{uneqri} at $4$ and \texttt{elun} at $5$ for
+\texttt{unass}; \texttt{elprg} at $6$ for \texttt{elpri}; \texttt{df-pr} at $2$
+for \texttt{prcom}. Symbol overlap is close to decisive in this regime.
+\end{observation}
+
+\begin{observation}[Where it fails]\label{obs:fail}
+Two classes of premise are retrieved poorly. The first is generic inference
+lemmas --- \texttt{orcom} at rank $312$ against frequency's $62$, \texttt{orbi1i}
+at $933$ against $215$, \texttt{3bitrri} at $1163$ against $307$. These appear in
+proofs across all of mathematics and share no vocabulary with any particular
+goal, so citation frequency predicts them and overlap cannot.
+
+The second is more fundamental. In Example~\ref{ex:prcom} the premise
+\texttt{uncom} is ranked $372$: the proof routes through union, but the goal
+$\{A,B\}=\{B,A\}$ contains no union symbol. \emph{Any} feature computed from
+shared vocabulary is structurally incapable of retrieving a premise whose
+notation does not appear in the goal.
+\end{observation}
+
+\begin{remark}[The two failure modes are different]
+The first is addressable by combination: frequency and the learned ranker fail
+on disjoint sets of premises, and Table~\ref{tab:agg} shows that fusing them
+improves aggregate effort from $0.387$ to $0.321$. The second is not, because no
+amount of reweighting recovers information the features never encoded.
+\end{remark}
+
+\section{Co-citation}\label{sec:cocite}
+
+Observation~\ref{obs:fail} identifies the obstacle: a premise stated in notation
+absent from the goal is invisible to vocabulary-based features. We propose a
+feature that measures a lemma's company rather than its vocabulary.
+
+\begin{definition}[Co-citation]\label{def:cocite}
+For statements $a,b$ let $c(a,b)$ be the number of proofs in the reference prefix
+citing both. Given a goal, let $A$ be a small set of \emph{anchors} --- candidates
+the vocabulary features already rank highly --- and define the co-citation score
+of a candidate $u$ as $\sum_{a\in A}c(u,a)$.
+\end{definition}
+
+\begin{remark}[Why this can reach what overlap cannot]
+Return to Example~\ref{ex:prcom}. The goal's notation points unambiguously at
+\texttt{df-pr}, which the ranker places at position $2$; \texttt{df-pr} therefore
+serves as an anchor. If \texttt{uncom} is cited alongside \texttt{df-pr}
+throughout \texttt{set.mm} --- as it is, since unfolding a pair into a union is
+the standard route to any statement about pairs --- then \texttt{uncom} receives a
+high co-citation score despite sharing no symbol with the goal. The mechanism is
+that of collaborative filtering: relatedness is inferred from co-occurrence
+rather than from content.
+\end{remark}
+
+\section{Related work}\label{sec:related}
+
+Premise selection has been studied principally in the Isabelle and Mizar
+ecosystems, where Sledgehammer's relevance filter \cite{sledgehammer} established
+the practical value of restricting a goal's premise set before invoking an
+external prover. Learning-based selectors followed, and surveys of the modern
+neural literature are available \cite{survey}. Our contribution is not a stronger
+model --- the scorer here is linear, and deliberately so --- but a reframing of
+the evaluation and of the training objective, together with an analysis
+localising where surface features suffice and where they cannot.
+
+The pairwise ranking formulation is RankNet \cite{burges}, standard in
+information retrieval and, so far as we are aware, less commonly applied to
+premise selection than pointwise classification. The metric we advocate, search
+effort, plays the role that rank-of-last-relevant-item plays in retrieval
+settings where a user must find every relevant document rather than any.
+
+\section{Limitations and further work}\label{sec:limits}
+
+\paragraph{Scale.} Results are reported on the first $8{,}000$ statements of
+\texttt{set.mm}, roughly a fifth of the corpus. Whether the margin over the
+baselines is preserved, widened or eroded as the library grows is open, and the
+question is sharpened by the heterogeneity of \texttt{set.mm}: its early portion
+is propositional logic and its later portion set theory, and a single linear
+scorer may not serve both.
+
+\paragraph{Model class.} The scorer is linear. A tree ensemble can represent
+interactions between features --- that vocabulary overlap should count for more
+on a content lemma than on a generic inference rule --- which a linear model
+cannot. We regard this as the most promising direction for improving the head of
+the ranking, where Observation~\ref{obs:head} shows a baseline still winning.
+
+\paragraph{Structural features.} All features here are computed from token sets.
+Genuine structural matching --- testing whether a candidate's conclusion unifies
+with a subterm of the goal modulo substitution --- would address
+Observation~\ref{obs:fail} directly rather than circumstantially, at
+substantially greater computational cost.
+
+\paragraph{Harder targets.} The theorems examined in Section~\ref{sec:cases} have
+shallow proofs that unfold a definition and apply a propositional lemma. Cantor's
+theorem, that no function maps a set onto its power set, is the natural next
+test: its proof constructs the diagonal set $\{y\in x : y\notin f(y)\}$ and
+derives a contradiction, so its premises concern separation, function application
+and negation --- machinery whose notation need not appear in the statement at
+all. It is precisely the regime of Observation~\ref{obs:fail}.
+
+\section{Conclusion}
+
+Premise selection is a ranking problem, and it is worth measuring and training as
+one. Measuring it as one means reporting search effort alongside recall, since a
+prover that must assemble every premise of a proof is governed by the depth of
+its worst-ranked premise and not by the quality of its top few guesses. Training
+it as one means fitting the scorer to the order induced within a goal, which
+matches the objective to the measurement and, by Proposition~\ref{prop:cancel},
+excludes a class of uninformative feature by construction.
+
+On ZFC as formalised in \texttt{set.mm} the resulting selector reads $1{,}161$ of
+$3{,}000$ candidates where reading the library in order requires $2{,}779$, and
+retrieves premises sharing notation with the goal at ranks $1$ to $6$ out of
+several thousand. It does not retrieve premises stated in unfamiliar notation,
+and the case studies show why: no feature computed from shared vocabulary can.
+Whether co-citation over the premise graph closes that gap is the question we
+regard as most worth answering next.
+
+\section*{Reproducibility}
+\addcontentsline{toc}{section}{Reproducibility}
+All results were produced by a single self-contained Python program depending on
+no third-party libraries. Every run writes a timestamped directory containing the
+fitted model, the measured quantities, and the corpus statistics used.
+\begin{lstlisting}
+python predator4.py fetch set.mm
+python predator4.py stats  --db set.mm --limit 8000
+python predator4.py train  --db set.mm --limit 8000 -p 0.8
+python predator4.py prove  --db set.mm --label prcom --limit 12000
+\end{lstlisting}
+
+\section*{Acknowledgements}
+\addcontentsline{toc}{section}{Acknowledgements}
+The author thanks AI assistants used as engineering and verification tools during
+the preparation of this work, including for code review, verification of
+cross-references, and the identification of several methodological faults during
+development. All mathematical claims, interpretations and final decisions remain
+the responsibility of the author.
+
+\begin{thebibliography}{9}
+\bibitem{burges} Burges, C., Shaked, T., Renshaw, E., Lazier, A., Deeds, M.,
+Hamilton, N., \& Hullender, G. (2005). Learning to rank using gradient descent.
+\textit{Proceedings of the 22nd International Conference on Machine Learning},
+89--96.
+\bibitem{megill} Megill, N. D., \& Wheeler, D. A. (2019). \textit{Metamath: A
+Computer Language for Mathematical Proofs} (2nd ed.). Lulu Press.
+\bibitem{sledgehammer} Paulson, L. C., \& Blanchette, J. C. (2010). Three years
+of experience with Sledgehammer, a practical link between automatic and
+interactive theorem provers. \textit{Proceedings of IWIL}.
+\bibitem{survey} Li, Z., Sun, J., Murphy, L., Su, Q., Li, Z., Zhang, X., Yang,
+K., \& Si, X. (2024). A survey on deep learning for theorem proving.
+\textit{Conference on Language Modeling}.
+\bibitem{tenneson} Tenneson, B. (2026). \textit{Depths of a Simulation and
+Formalized Self-Awareness}, Merged Edition.
+\end{thebibliography}
+
+\end{document}

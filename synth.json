@@ -1,0 +1,94 @@
+{
+  "summary": {
+    "nodes": 985,
+    "edges": 1991,
+    "axioms": 3,
+    "theorems": 982,
+    "max_depth": 6
+  },
+  "depth_check": {
+    "regime": "same-system",
+    "checked": 985,
+    "below_bound": 0,
+    "examples": [],
+    "gap_mean": 2.2598984771573605,
+    "gap_median": 2.0,
+    "gap_max": 4.0,
+    "violations": 0
+  },
+  "breadth": {
+    "stage_sizes": [
+      3,
+      39,
+      111,
+      381,
+      579,
+      789,
+      985
+    ],
+    "per_target": [
+      {
+        "target": "th_789",
+        "depth": 6,
+        "focused": 7,
+        "unguided": 985,
+        "ratio": 0.007106598984771574
+      },
+      {
+        "target": "th_790",
+        "depth": 6,
+        "focused": 8,
+        "unguided": 985,
+        "ratio": 0.008121827411167513
+      },
+      {
+        "target": "th_791",
+        "depth": 6,
+        "focused": 8,
+        "unguided": 985,
+        "ratio": 0.008121827411167513
+      },
+      {
+        "target": "th_792",
+        "depth": 6,
+        "focused": 8,
+        "unguided": 985,
+        "ratio": 0.008121827411167513
+      },
+      {
+        "target": "th_793",
+        "depth": 6,
+        "focused": 8,
+        "unguided": 985,
+        "ratio": 0.008121827411167513
+      }
+    ]
+  },
+  "premise": {
+    "n_train_pairs": 14735,
+    "n_train_theorems": 687,
+    "n_test_theorems": 295,
+    "weights": [
+      -3.7222,
+      0.3484,
+      0.53,
+      0.9536,
+      -0.7105,
+      -0.1715,
+      -0.1911,
+      -1.1574
+    ],
+    "recall_at": {
+      "1": 0.1559,
+      "5": 0.4322,
+      "10": 0.4847
+    },
+    "baseline_at": {
+      "1": 0.0525,
+      "5": 0.3458,
+      "10": 0.4525
+    },
+    "mrr": 0.5313,
+    "mrr_baseline": 0.3467
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "BFS (lam=0)": {
+    "n": 18,
+    "solved": 18,
+    "solve_rate": 1.0,
+    "mean_exp": 25.27777777777778,
+    "mean_len": 3.388888888888889,
+    "optimal": 18,
+    "opt_rate": 1.0
+  },
+  "logistic reorder": {
+    "n": 18,
+    "solved": 18,
+    "solve_rate": 1.0,
+    "mean_exp": 15.88888888888889,
+    "mean_len": 3.4444444444444446,
+    "optimal": 17,
+    "opt_rate": 0.9444444444444444
+  },
+  "logistic prune k=6": {
+    "n": 18,
+    "solved": 18,
+    "solve_rate": 1.0,
+    "mean_exp": 17.61111111111111,
+    "mean_len": 3.5,
+    "optimal": 16,
+    "opt_rate": 0.8888888888888888
+  },
+  "forest reorder": {
+    "n": 18,
+    "solved": 18,
+    "solve_rate": 1.0,
+    "mean_exp": 15.722222222222221,
+    "mean_len": 3.388888888888889,
+    "optimal": 18,
+    "opt_rate": 1.0
+  },
+  "forest prune k=6": {
+    "n": 18,
+    "solved": 18,
+    "solve_rate": 1.0,
+    "mean_exp": 19.166666666666668,
+    "mean_len": 3.4444444444444446,
+    "optimal": 17,
+    "opt_rate": 0.9444444444444444
+  }
+}
