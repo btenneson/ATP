@@ -203,14 +203,87 @@ i.e. `ℕ × ℕ ≈ ℕ`. ∎
 
 ## The dependency graph
 
+![theorem graph](ir_lemma_graph.svg)
+
+```mermaid
+graph TD
+  L1["L1 ultrafilter exists"]
+  L6["L6 archimedean"]
+  L14["L14 |R| = 2^a0"]
+  L2["L2 cofinite sets in F"]
+  L3["L3 equivalence relation"]
+  L9["L9 j injective"]
+  L15["L15 |R^N| = |R|"]
+  L4["L4 *R is a set"]
+  L5["L5 I well defined"]
+  L8["L8 j maps into I"]
+  L7["L7 eps in I &#40;unused&#41;"]
+  L12["L12 q surjective"]
+  L11["L11 I &lt;= *R"]
+  L10["L10 R &lt;= I"]
+  L13["L13 *R &lt;= R^N"]
+  L16["L16 I &lt;= R"]
+  L17["L17 I ~~ R"]
+
+  L1 --> L2
+  L1 --> L3
+  L1 --> L9
+  L3 --> L4
+  L3 --> L5
+  L14 --> L15
+  L2 --> L7
+  L6 --> L7
+  L2 --> L8
+  L6 --> L8
+  L4 --> L11
+  L5 --> L11
+  L4 --> L12
+  L8 --> L10
+  L9 --> L10
+  L12 --> L13
+  L11 --> L16
+  L13 --> L16
+  L15 --> L16
+  L10 --> L17
+  L16 --> L17
+
+  classDef hyp fill:#fdecc8,stroke:#c8912e
+  classDef dom fill:#cfe9e5,stroke:#3a8c80
+  classDef goal fill:#d6ead6,stroke:#4a8c4a
+  classDef dead fill:#f6dada,stroke:#b06060
+  class L2,L13 hyp
+  class L10,L16 dom
+  class L17 goal
+  class L7 dead
 ```
-L1  ←                      L2  ← L1               L3  ← L1
-L4  ← L3                   L5  ← L3               L6  ←
-L7  ← L2, L6               L8  ← L2, L6           L9  ← L1
-L10 ← L8, L9               L11 ← L4, L5           L12 ← L4
-L13 ← L12                  L14 ←                  L15 ← L14
-L16 ← L11, L13, L15        L17 ← L10, L16
+
+Amber marks the two lemmas carrying a nontrivial hypothesis — L2 nonprincipality,
+L13 choice. Teal marks the two dominance results. Red marks L7, which no arrow
+leaves toward L17.
+
+Text form, for encoding:
+
 ```
+L1  <-                     L2  <- L1              L3  <- L1
+L4  <- L3                  L5  <- L3              L6  <-
+L7  <- L2, L6              L8  <- L2, L6          L9  <- L1
+L10 <- L8, L9              L11 <- L4, L5          L12 <- L4
+L13 <- L12                 L14 <-                 L15 <- L14
+L16 <- L11, L13, L15       L17 <- L10, L16
+```
+
+### What the shape shows
+
+**Wide, not deep.** Six rounds to reach L17 but sixteen lemmas in the proof —
+that is the whole slack in δ+1 ≤ ‖·‖. Depths 0 through 2 fire in parallel; a
+linear proof must list them one at a time.
+
+**The critical path is entirely cardinality.** L10 (`ℝ ≼ I`) completes at depth
+3 and then waits three rounds for L16, which must route L4 → L12 → L13 → L16.
+The injection half is cheap; the counting half is what costs. Shortening the
+proof means attacking L12–L13.
+
+**L7 is detached.** Nothing leaves it toward L17.
 
 ### Closure depth, computed by hand
 

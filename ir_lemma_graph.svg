@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="620" viewBox="0 0 700 620" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">
+<title>Theorem graph for |I| = |R|</title>
+<desc>Seventeen lemmas arranged by closure depth; edges run from premise to conclusion. L7 is detached because it is not an ancestor of L17.</desc>
+<style>
+ .b{stroke-width:1.5;rx:6}
+ .n{fill:#eceff1;stroke:#90a4ae}
+ .a{fill:#fdecc8;stroke:#c8912e}
+ .t2{fill:#cfe9e5;stroke:#3a8c80}
+ .g{fill:#d6ead6;stroke:#4a8c4a}
+ .r{fill:#f6dada;stroke:#b06060}
+ .lab{font-size:13px;font-weight:500;fill:#16202a;text-anchor:middle}
+ .dep{font-size:12px;fill:#607d8b}
+ .key{font-size:12px;fill:#546e7a}
+ .e{stroke:#78909c;stroke-width:1.4;fill:none;marker-end:url(#a)}
+ .u{stroke:#b06060;stroke-width:1.2;fill:none;stroke-dasharray:4 3}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#78909c"/></marker></defs>
+
+<text class="dep" x="24" y="34">depth</text>
+
+<text class="dep" x="30" y="73">0</text>
+<rect class="b n" x="80" y="52" width="130" height="30"/><text class="lab" x="145" y="72">L1 ultrafilter</text>
+<rect class="b n" x="240" y="52" width="130" height="30"/><text class="lab" x="305" y="72">L6 archimedean</text>
+<rect class="b n" x="400" y="52" width="130" height="30"/><text class="lab" x="465" y="72">L14 |R| = 2^a0</text>
+
+<text class="dep" x="30" y="153">1</text>
+<rect class="b a" x="80" y="132" width="130" height="30"/><text class="lab" x="145" y="152">L2 cofinite in F</text>
+<rect class="b n" x="240" y="132" width="130" height="30"/><text class="lab" x="305" y="152">L3 equiv relation</text>
+<rect class="b n" x="400" y="132" width="130" height="30"/><text class="lab" x="465" y="152">L15 |R^N| = |R|</text>
+<rect class="b n" x="560" y="132" width="110" height="30"/><text class="lab" x="615" y="152">L9 j injective</text>
+
+<text class="dep" x="30" y="233">2</text>
+<rect class="b n" x="80" y="212" width="130" height="30"/><text class="lab" x="145" y="232">L4 *R is a set</text>
+<rect class="b n" x="240" y="212" width="130" height="30"/><text class="lab" x="305" y="232">L5 I well defined</text>
+<rect class="b n" x="400" y="212" width="130" height="30"/><text class="lab" x="465" y="232">L8 j maps into I</text>
+
+<text class="dep" x="30" y="313">3</text>
+<rect class="b n" x="80" y="292" width="130" height="30"/><text class="lab" x="145" y="312">L12 q surjective</text>
+<rect class="b n" x="240" y="292" width="130" height="30"/><text class="lab" x="305" y="312">L11 I &#8804; *R</text>
+<rect class="b t2" x="400" y="292" width="130" height="30"/><text class="lab" x="465" y="312">L10 R &#8804; I</text>
+
+<text class="dep" x="30" y="393">4</text>
+<rect class="b a" x="80" y="372" width="130" height="30"/><text class="lab" x="145" y="392">L13 *R &#8804; R^N</text>
+
+<text class="dep" x="30" y="473">5</text>
+<rect class="b t2" x="240" y="452" width="130" height="30"/><text class="lab" x="305" y="472">L16 I &#8804; R</text>
+
+<text class="dep" x="30" y="554">6</text>
+<rect class="b g" x="240" y="532" width="190" height="34"/><text class="lab" x="335" y="554">L17   I &#8776; R</text>
+
+<path class="e" d="M145 82L145 128"/>
+<path class="e" d="M160 82L288 128"/>
+<path class="e" d="M195 76L585 130"/>
+<path class="e" d="M465 82L465 128"/>
+<path class="e" d="M305 82L432 128"/>
+<path class="e" d="M195 148L398 208"/>
+<path class="e" d="M295 162L175 208"/>
+<path class="e" d="M305 162L305 208"/>
+<path class="e" d="M605 162L500 208"/>
+<path class="e" d="M145 242L145 288"/>
+<path class="e" d="M162 242L278 288"/>
+<path class="e" d="M305 242L305 288"/>
+<path class="e" d="M465 242L465 288"/>
+<path class="e" d="M145 322L145 368"/>
+<path class="e" d="M305 322L305 448"/>
+<path class="e" d="M162 402L278 450"/>
+<path class="e" d="M480 162L345 450"/>
+<path class="e" d="M305 482L318 528"/>
+<path class="e" d="M465 322L360 528"/>
+
+<rect class="b r" x="480" y="452" width="190" height="30"/><text class="lab" x="575" y="472">L7 eps in I  (unused)</text>
+<path class="u" d="M480 227L510 450"/>
+
+<text class="key" x="24" y="598">amber: uses choice or nonprincipality    teal: the two dominance results    red: not an ancestor of L17</text>
+</svg>
