@@ -1,0 +1,9 @@
+\contentsline {section}{\numberline {1}What can be compared}{2}{section.1}%
+\contentsline {section}{\numberline {2}Theory: what a policy may and may not do}{2}{section.2}%
+\contentsline {section}{\numberline {3}Theory: when a policy is worth its cost}{3}{section.3}%
+\contentsline {section}{\numberline {4}League A: premise selection over set.mm}{3}{section.4}%
+\contentsline {section}{\numberline {5}League B: search policy over the fragment}{3}{section.5}%
+\contentsline {section}{\numberline {6}League C: strategies timed in seconds}{4}{section.6}%
+\contentsline {section}{\numberline {7}Why the same architecture won here and lost before}{5}{section.7}%
+\contentsline {section}{\numberline {8}Limitations}{5}{section.8}%
+\contentsline {section}{\numberline {9}Conclusion}{6}{section.9}%

@@ -1,0 +1,12 @@
+==========================================================================
+  PREDATOR_5 vs PREDATOR_6
+  same sweep, same split, same held-out targets at every depth
+==========================================================================
+
+  p=0.70   n=3 passes   lam=0.50   per-target budget=150
+
+  depth 4 ... 3s
+
+  depth 5 ... 16s
+
+  depth 6 ...

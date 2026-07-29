@@ -1,0 +1,407 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=red,urlcolor=cyan]{hyperref}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Three Benchmarks, Three Winners}
+\fancyhead[R]{\small Tenneson, \today}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{finding}{Finding}
+
+\newcommand{\Sig}{\Sigma}
+\newcommand{\D}{\mathsf{D}}
+
+\title{\textbf{Three Benchmarks, Three Winners}\\[4pt]
+\large A Measured Comparison of the Predator Provers\\[2pt]
+\normalsize Premise Selection, Search Policy, and the Cost of a Node}
+\author{Brian Tenneson\\ \small M.S., Applied Data Science\\
+\small \texttt{btenneson2301@baypath.edu}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Seven systems have been built under the name Predator. They rank different
+objects, over different corpora, in different units, and for most pairs the
+question ``which is better'' is not well posed: a premise selector's
+\emph{fraction of the library read} and a search policy's \emph{nodes expanded}
+are not commensurable quantities, and reporting them in one column would be the
+easiest available way to mislead a reader.
+
+Partitioned into three benchmarks on which comparison \emph{is} well posed, the
+systems separate cleanly. Over set.mm, Predator\_4 wins premise selection on
+every metric and its performance is flat from four thousand statements to fifty
+thousand. Over the condensed-detachment fragment, Predator\_5 expands $2.14
+\times$ fewer nodes than breadth-first search and---this is the claim that had
+never been checked---finishes $1.76 \times$ faster in wall clock, while solving
+every target and returning a shortest proof $99\%$ of the time.
+
+Two results cut across the benchmarks. A linear ranker beat a random forest in
+three independent settings, which is evidence about the features rather than
+about the forest. And every search strategy that \emph{discards} states---beam
+search, top-$k$ pruning---finished slower in seconds than unguided breadth-first
+search \emph{and} solved fewer targets. Proof-covering theory predicts that
+discarding forfeits a completeness theorem; these measurements say it also
+forfeits speed, so on this fragment the guarantee was free.
+
+A general rule falls out of the timing data, and it is a statement about domains
+rather than about policies: a learned policy pays only when expanding a node is
+expensive relative to scoring one. Predator\_1's beam search lost $2.5 \times$
+in wall clock while opening $18 \times$ fewer nodes, not because its policy was
+poor but because its nodes cost $21\,\mu s$ and were not worth avoiding.
+\end{abstract}
+
+\tableofcontents
+
+\section{What can be compared}
+
+\begin{center}
+\small
+\begin{tabular}{llll}
+\toprule
+\textbf{System} & \textbf{Ranks} & \textbf{Corpus} & \textbf{Metric} \\
+\midrule
+Predator\_1 & proof-graph nodes & synthetic, 789 & expansions, seconds \\
+Predator\_2 & lemmas & set.mm, 8k & recall@$k$, effort \\
+Predator\_3 & lemmas & set.mm, 2k--32k & recall@$k$, effort \\
+Predator\_4 & lemmas & set.mm, 50k & recall@$k$, effort \\
+python\_rf & lemmas & set.mm, 16k & recall@$k$, effort \\
+Predator\_5 & edges & CD fragment & expansions vs.\ BFS \\
+Predator\_6 & edges & CD fragment & expansions vs.\ BFS \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Predator\_4's $3.5\times$ is a fraction of the library that must be read.
+Predator\_5's $1.8\times$ is nodes expanded before a target appears. These are
+different quantities and there is no exchange rate between them. The systems are
+therefore judged in three leagues: premise selection over set.mm, search policy
+over the fragment, and search strategy timed in seconds.
+
+\section{Theory: what a policy may and may not do}
+
+\begin{definition}[Proof-covering]
+A nondeterministic proof-search policy $\Sig$ is \emph{proof-covering} if for
+every finite proof $\pi = \langle \pi(1),\dots,\pi(n) \rangle$ from $\Gamma$
+there is a branch $b = \langle p_1, p_2, \dots \rangle$ of the search with
+$\{\pi(1),\dots,\pi(j)\} \subseteq p_j$ for every $j \le n$.
+\end{definition}
+
+Under that hypothesis the Branch-Covering Theorem applies: if $\Gamma \vdash_F
+\varphi$ then some target-search branch reaches $\varphi$ by stage
+$\|\varphi\|_F(\Gamma)$. Two ways of consuming a learned score have different
+standing with respect to it.
+
+\begin{proposition}[Reordering preserves proof-covering]
+\label{prop:reorder}
+Let $\Sig_{\mathrm{full}}$ return every admissible one-step extension at $p$,
+and let $\Sig_\theta$ return the same set permuted by a scoring function
+$\theta$. If $\Sig_{\mathrm{full}}$ is proof-covering then so is $\Sig_\theta$.
+\end{proposition}
+
+\begin{proof}
+A branch is determined by which extensions are \emph{present} in each
+$\Sig(p_m,m)$, not by the order in which they are listed. Since
+$\Sig_\theta(p,m) = \Sig_{\mathrm{full}}(p,m)$ as sets, the two policies generate
+the same set of branches, so any branch shadowing $\pi$ under one shadows it
+under the other.
+\end{proof}
+
+\begin{proposition}[Truncation destroys it]
+\label{prop:prune}
+Let $\Sig_{\theta,k}$ return only the top $k$ extensions by $\theta$. Then
+$\Sig_{\theta,k}$ need not be proof-covering.
+\end{proposition}
+
+\begin{proof}
+It suffices that some state have its unique proof-continuing extension scored
+outside the top $k$. Nothing ties a fitted $\theta$ to geodesic membership, and
+\S\ref{sec:leagueC} reports the failure occurring: pruned and beam policies lost
+targets that every complete policy solved.
+\end{proof}
+
+Beam search is subject to Proposition~\ref{prop:prune} for the same reason:
+retaining the best $W$ states per level discards the rest permanently.
+
+\section{Theory: when a policy is worth its cost}
+
+Node counts are hardware-independent, which is exactly why they can mislead---a
+node count does not charge for deciding. Let $E$ denote expansions and $c$ cost
+per expansion.
+
+\begin{definition}
+The \emph{node speedup} is $\sigma = E_{\mathrm{BFS}} / E_{\pi}$ and the
+\emph{per-node overhead} is $\omega = c_{\pi} / c_{\mathrm{BFS}}$.
+\end{definition}
+
+\begin{proposition}[Break-even]
+\label{prop:breakeven}
+The wall-clock speedup of policy $\pi$ over breadth-first search is
+$\sigma / \omega$. In particular $\pi$ is faster in real time if and only if
+$\sigma > \omega$.
+\end{proposition}
+
+\begin{proof}
+Total time is expansions times cost per expansion, so
+\[
+\frac{T_{\mathrm{BFS}}}{T_{\pi}}
+= \frac{E_{\mathrm{BFS}}\, c_{\mathrm{BFS}}}{E_{\pi}\, c_{\pi}}
+= \frac{\sigma}{\omega}. \qedhere
+\]
+\end{proof}
+
+Trivial, and it is the proposition the project spent the longest not applying.
+Predator\_1 reported $\sigma = 18.1$ with $\omega = 41$, hence
+$\sigma/\omega = 0.44$: eighteen times fewer nodes and two and a half times
+slower.
+
+\section{League A: premise selection over set.mm}
+
+\begin{center}
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{System} & \textbf{Corpus} & \textbf{r@10} & \textbf{r@50} &
+\textbf{MRR} & \textbf{Effort} & \textbf{vs.\ brute} \\
+\midrule
+Predator\_2 (early) & 8k & 0.160 & 0.333 & 0.436 & 0.3513 & $2.6\times$ \\
+Predator\_2 (later) & 8k & 0.232 & 0.491 & 0.479 & 0.3871 & $2.4\times$ \\
+Predator\_2 (poor features) & 8k & 0.059 & 0.147 & 0.159 & 0.7470 & $1.2\times$ \\
+Predator\_3 & 32k & 0.275 & 0.600 & 0.668 & 0.6417 & $1.5\times$ \\
+\textbf{Predator\_4} & \textbf{50k} & \textbf{0.419} & \textbf{0.730} &
+\textbf{0.885} & \textbf{0.2866} & $\mathbf{3.5\times}$ \\
+python\_rf (forest) & 16k & 0.163 & 0.497 & 0.567 & 0.7007 & $1.4\times$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{finding}
+Predator\_4 wins League A on every metric, at the largest corpus.
+\end{finding}
+
+\begin{finding}[Scaling]
+Recall@10 as the corpus grows from 2k to 32k statements:
+\[
+\text{Predator\_3:}\quad 0.326,\; 0.253,\; 0.143,\; 0.228,\; 0.275
+\]
+\[
+\text{Predator\_4:}\quad 0.336,\; 0.412,\; 0.413,\; 0.431,\; 0.414
+\]
+Predator\_3 swings by a factor of $2.3$ with no mechanism to explain it and is
+measuring variance. Predator\_4 is flat to $\pm 0.02$ from 4k onward, and a flat
+curve is itself the result: performance holds as the library grows.
+\end{finding}
+
+\begin{finding}[Features dominate models]
+The same Predator\_2 code scored recall@10 of $0.059$ and $0.232$ depending only
+on which features were active---a fourfold swing, larger than any gap between
+versions. In the poor run the weight on local co-citation was $-0.94$; in the
+good run, $+0.586$. One sign flip cost more than three versions of progress.
+\end{finding}
+
+\section{League B: search policy over the fragment}
+
+The fragment is condensed detachment over implicational formulas: one rule,
+most-general unification with occurs check, $\Gamma = \{K,S,W\}$. Its defining
+virtue is that $\Sig(p,m)$ is finite and enumerable, which is what permits
+breadth-first search to compute true geodesics and hence to supply labels that
+are correct by construction rather than read from human-written proofs.
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+\textbf{System} & \textbf{Depth 4} & \textbf{Depth 5} \\
+\midrule
+BFS ($\lambda = 0$) & 25.6 exp. & 75.5 exp. \\
+\textbf{Predator\_5} & $\mathbf{15.5 \pm 2.6}$ ($1.60\times$) &
+$\mathbf{42.3 \pm 8.6}$ ($1.78\times$) \\
+Predator\_6 ($p=0.7$) & indistinguishable & indistinguishable \\
+Predator\_6.1 ($p=0.9$) & indistinguishable & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{finding}[Expert iteration is null here]
+Over a $p \times n$ grid paired on identical seeds, no setting beats $n=1$.
+Predator\_6.1 came in $0.5$ expansions faster against a seed-to-seed standard
+deviation of $2.6$, and Predator\_6 costs $30$--$139\%$ more expansions to reach
+the same place.
+\end{finding}
+
+The mechanism is clear and it is not a defect in the implementation. Enlarging
+the bootstrap frontier creates nothing past the breadth-first horizon, and on
+this fragment breadth-first search prices \emph{every} target. Certified labels
+are already geodesics; bootstrapped labels are upper bounds, and adding them to
+a training set that did not need them lowered the certified share to $22\%$ at
+depth 5 and $10\%$ at depth 6.
+
+\begin{remark}[A retracted hypothesis]
+An earlier draft claimed expert iteration pays wherever pass one leaves frontier
+targets unsolved, inferred from a single depth-5 versus depth-6 comparison. A
+controlled sweep refutes it. Depth 6 left $35\%$ of its frontier unsolved---the
+most favourable case the hypothesis admits---and Predator\_6 lost there, solving
+22 against 24. Depth 4 left $0\%$ and Predator\_6 nominally won. The correlation
+runs backwards, and all three differences lay inside the seed noise in any case.
+\end{remark}
+
+\section{League C: strategies timed in seconds}
+\label{sec:leagueC}
+
+Depth 5, 30 held-out targets, mean over 5 seeds. One ranker, one split; only the
+search strategy varies.
+
+\begin{center}
+\small
+\begin{tabular}{lrrrrrl}
+\toprule
+\textbf{Strategy} & \textbf{Solved} & \textbf{Exp.} & \textbf{Sec.} &
+$\boldsymbol{\mu s}$\textbf{/exp} & \textbf{Opt.} & \textbf{Guarantee} \\
+\midrule
+BFS ($\lambda=0$) & $100\%$ & $90.0$ & $2.92$ & $1083$ & $100\%$ & geodesic, complete \\
+\textbf{A* reorder} & $\mathbf{100\%}$ & $\mathbf{42.0}$ & $\mathbf{1.66}$ &
+$1328$ & $\mathbf{99\%}$ & complete \\
+A* prune $k{=}4$ & $91\%$ & $77.8$ & $3.48$ & $1487$ & $91\%$ & \textbf{incomplete} \\
+Beam $W{=}8$ & $70\%$ & $114.5$ & $19.09$ & $5483$ & $80\%$ & \textbf{incomplete} \\
+Beam $W{=}1$ & $35\%$ & $29.4$ & $4.02$ & $4564$ & $41\%$ & \textbf{incomplete} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Applying Proposition~\ref{prop:breakeven}:
+
+\begin{center}
+\small
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Strategy} & $\boldsymbol{\sigma}$ & $\boldsymbol{\omega}$ &
+$\boldsymbol{\sigma/\omega}$ \\
+\midrule
+\textbf{A* reorder} & $2.14$ & $1.2$ & $\mathbf{1.76}$ \\
+A* prune $k{=}4$ & $1.16$ & $1.4$ & $0.84$ \\
+Beam $W{=}8$ & $0.79$ & $5.1$ & $0.15$ \\
+Beam $W{=}1$ & $3.06$ & $4.2$ & $0.73$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{finding}[The node advantage survives timing]
+Predator\_5 achieves $\sigma = 2.14$ at $\omega = 1.2$, hence
+$\sigma/\omega = 1.76$: it is faster in seconds, not merely in nodes, while
+solving every target and returning a geodesic $99\%$ of the time.
+\end{finding}
+
+\begin{finding}[Beam search is the weakest strategy measured]
+Beam search---Predator\_1's strategy---solved $70\%$ of targets, expanded
+\emph{more} nodes than unguided breadth-first search ($114.5$ against $90.0$),
+and finished $6.6\times$ slower in seconds. Its $\omega = 5.1$ is structural: a
+level-synchronous beam scores every child of every state in a level, sorts them,
+and discards most, paying for scoring it never uses.
+\end{finding}
+
+\begin{finding}[Discarding costs more than a theorem]
+All three strategies that discard states finished slower than breadth-first
+search \emph{and} solved fewer targets. The only strategy that merely reorders
+won on every axis. Proposition~\ref{prop:prune} says discarding forfeits the
+Branch-Covering Theorem; these measurements say it forfeits time and solve rate
+as well. On this fragment there was no speed-for-guarantee trade to make.
+\end{finding}
+
+\begin{finding}[Linear beats forest, three times]
+python\_rf on set.mm: effort $0.2898 \to 0.7007$ at $6.4\times$ the fit time.
+Predator\_3's forest variant: recall@10 $0.185, 0.063, 0.077$. Predator\_5's
+ranker: $47.0$ against $34.9$ expansions. Three independent settings agree,
+which makes this evidence that the signal is close to linear \emph{in these
+features}---not evidence that forests are unsuitable.
+\end{finding}
+
+\section{Why the same architecture won here and lost before}
+
+Predator\_1 opened $18\times$ fewer nodes and lost $2.5\times$ in wall clock;
+Predator\_5 opens $2.14\times$ fewer and wins $1.76\times$. The smaller node
+advantage produced the better outcome. The explanation is in $\omega$, and it is
+a statement about the domain.
+
+Breadth-first search costs $1083\,\mu s$ per expansion on the fragment;
+Predator\_1's brute force costs $21$--$28\,\mu s$. The difference is not the
+logic---both systems close forward from three axioms---but \emph{when the graph
+is built}.
+
+Predator\_1 constructs its corpus once, by brute-force closure, reporting stage
+sizes $|D_F^{(m-1)}(G)| = [3, 39, 111, 381, 579, 789]$. Search then runs over a
+\emph{precomputed} graph, so expanding a node is an adjacency lookup. Scoring it
+costs more than visiting it, and $\omega = 41$.
+
+Predator\_5 computes $\Sig(p,m)$ \emph{on demand}, attempting $\D(x,y)$ for every
+ordered pair in the state with unification and an occurs check at every
+expansion. Visiting a node costs far more than scoring it, and $\omega = 1.2$.
+
+\begin{corollary}
+A learned policy is worth its cost precisely when expanding a node is expensive
+relative to scoring one---equivalently, when the search graph is generated on
+demand rather than precomputed.
+\end{corollary}
+
+Predator\_1's policy may have been perfectly good; its nodes were too cheap to be
+worth avoiding. The consequence for set.mm is immediate, and it now depends on an
+architectural choice rather than on model quality. A prover that searches the
+recorded citation DAG has precomputed edges, hence Predator\_1's regime, hence
+large $\omega$. A prover that re-derives admissible extensions by unification has
+Predator\_5's regime and small $\omega$---but that is the enumeration problem
+that drove Predator\_2 to premise selection in the first place.
+
+The two regimes are therefore not freely choosable. Cheap nodes come with a
+precomputed graph, which means the proofs are already known; expensive nodes come
+with genuine search. This is the central tension of the project stated in units
+of microseconds.
+
+\section{Limitations}
+
+The fragment is condensed detachment, not ZFC. Predator\_5's features are stated
+in its terms---unifier growth, membership in $\Gamma$---and there is no
+$\in$ or $\forall$ for them to describe, so League B and C results do not
+transfer to set.mm as stated.
+
+Held-out sets are small: 18 to 39 targets, with seed-to-seed standard deviations
+of $2.6$ to $11.7$ expansions. Every figure quoted here is a mean over five or
+ten seeds for that reason, and single-run figures from earlier drafts of this
+work were not reliable.
+
+League A and League B measure different things and their winners do not compete.
+Predator\_4 cannot prove anything: it emits an ordering and stops. Predator\_5
+produces proofs but only within a 287-state fragment.
+
+\section{Conclusion}
+
+Three winners, one per benchmark. Predator\_4 for premise selection over set.mm,
+on every metric, with performance flat to fifty thousand statements. Predator\_5
+for search policy, now the best-evidenced system in the project: fewer nodes,
+fewer seconds, complete, and geodesic $99\%$ of the time. Logistic regression
+over random forests, in three independent settings.
+
+One loser worth naming: every strategy that discards states. The theory
+predicted the completeness cost; the measurements added that there was no
+compensating speed. Where reordering suffices, the guarantee is free.
+
+And one rule that outlives the numbers. Whether a learned policy pays is decided
+by the ratio of node cost to scoring cost, not by the quality of the policy.
+That ratio is a property of the domain, it is measurable before any model is
+fitted, and it should be measured first.
+
+\end{document}

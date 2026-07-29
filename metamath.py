@@ -514,41 +514,127 @@ def cmd_verify(a):
     return 0 if not failures else 1
 
 
+def classify(mm):
+    """Split every label into 'syntax' or 'logic'.
+
+    The criterion is the TYPECODE -- the first token of the statement.  In
+    set.mm a $a whose statement begins with 'wff', 'class' or 'setvar' is a
+    grammar rule that builds a formula; only a $a beginning with '|-' asserts
+    anything.  So
+
+        wcel $a wff A e. B $.        <- syntax: how to WRITE "A e. B"
+        ax-mp $a |- ps $.            <- logic:  an actual rule of inference
+
+    $f hypotheses are variable typings and are syntax by the same token.  This
+    is the distinction that raw step counts hide."""
+    kind = {}
+    for lab, (typ, data) in mm.labels.items():
+        if typ == "$f":
+            kind[lab] = "syntax"
+        elif typ == "$e":
+            kind[lab] = "hyp"
+        else:
+            stat = data[3]
+            kind[lab] = "logic" if stat and stat[0] == "|-" else "syntax"
+    return kind
+
+
+def _dist(xs, label, pad=""):
+    xs = sorted(xs)
+    if not xs:
+        return
+    print("%s  %-14s median %s, mean %.0f, max %s"
+          % (pad, label, f"{xs[len(xs)//2]:,}", sum(xs) / len(xs), f"{xs[-1]:,}"))
+
+
 def cmd_stats(a):
     print("\n" + "=" * 74)
     print("  metamath.py v%s  --  corpus statistics" % VERSION)
     print("=" * 74 + "\n")
     mm = load(a.file)
+    kind = classify(mm)
 
     thms = [l for l in mm.order if mm.labels[l][0] == "$p"]
-    lens = []
-    cites = defaultdict(int)
-    for l in thms:
-        p = mm.proofs[l]
-        if p and p[0] == "(":
-            try:
-                end = p.index(")")
-                refs = p[1:end]
-            except ValueError:
-                refs = []
-            lens.append(len("".join(p[p.index(")") + 1:])) if ")" in p else 0)
-        else:
-            refs = [t for t in p if t in mm.labels]
-            lens.append(len(p))
-        for r in refs:
-            cites[r] += 1
+    axs = [l for l in mm.order if mm.labels[l][0] == "$a"]
 
-    lens = [x for x in lens if x]
-    lens.sort()
-    print("\n  theorems      %s" % f"{len(thms):,}")
-    if lens:
-        print("  proof length  median %d, mean %.0f, max %s"
-              % (lens[len(lens) // 2], sum(lens) / len(lens), f"{lens[-1]:,}"))
+    # ---- what the "axioms" actually are ------------------------------
+    ax_syntax = [l for l in axs if kind[l] == "syntax"]
+    ax_logic = [l for l in axs if kind[l] == "logic"]
+    ax_true = [l for l in ax_logic if l.startswith("ax-")]
+    ax_def = [l for l in ax_logic if l.startswith("df-")]
+    ax_other = [l for l in ax_logic
+                if not l.startswith("ax-") and not l.startswith("df-")]
 
-    print("\n  most-cited labels (this is the prior a premise selector learns):")
-    for lab, n in sorted(cites.items(), key=lambda kv: -kv[1])[:15]:
-        typ = mm.labels[lab][0] if lab in mm.labels else "?"
-        print("    %-12s %6s   %s" % (lab, f"{n:,}", typ))
+    print("\n  $a statements   %s" % f"{len(axs):,}")
+    print("    syntax rules  %-8s  grammar: how to write a formula"
+          % f"{len(ax_syntax):,}")
+    print("    definitions   %-8s  df-*" % f"{len(ax_def):,}")
+    print("    TRUE AXIOMS   %-8s  ax-*" % f"{len(ax_true):,}")
+    if ax_other:
+        print("    other |-      %-8s  %s" % (f"{len(ax_other):,}",
+                                              ", ".join(ax_other[:5])))
+    print("\n    the logical content of ZFC is those %d ax-* statements."
+          % len(ax_true))
+    print("    %s of the %s are grammar, not mathematics."
+          % (f"{len(ax_syntax):,}", f"{len(axs):,}"))
+    if ax_true:
+        print("    %s" % ", ".join(sorted(ax_true)[:14]))
+
+    if not a.logical:
+        print("\n  theorems        %s" % f"{len(thms):,}")
+        print("\n  (run with --logical to separate reasoning steps from")
+        print("   formula-building steps; it decompresses every proof)\n")
+        return
+
+    # ---- per-proof step accounting -----------------------------------
+    print("\n  decompressing %s proofs..." % f"{len(thms):,}")
+    t0 = time.time()
+    total, logic_only = [], []
+    cites_all, cites_logic = defaultdict(int), defaultdict(int)
+    skipped = 0
+    for i, l in enumerate(thms, 1):
+        try:
+            proof = mm.decompress(l, mm.proofs[l])
+        except (MMError, RecursionError, ValueError):
+            skipped += 1
+            continue
+        nl = sum(1 for s in proof if kind.get(s) == "logic")
+        total.append(len(proof))
+        logic_only.append(nl)
+        for s in set(proof):                      # distinct labels per proof
+            cites_all[s] += 1
+            if kind.get(s) == "logic":
+                cites_logic[s] += 1
+        if i % 10000 == 0:
+            print("    %s/%s" % (f"{i:,}", f"{len(thms):,}"))
+    print("    done in %.1fs%s"
+          % (time.time() - t0,
+             ", %d skipped" % skipped if skipped else ""))
+
+    print("\n  PROOF LENGTH")
+    _dist(total, "all steps")
+    _dist(logic_only, "logical only")
+    st, sl = sum(total), sum(logic_only)
+    if st:
+        print("\n    %s of %s steps are formula-building: %.0f%%"
+              % (f"{st - sl:,}", f"{st:,}", 100 * (st - sl) / st))
+        print("    logical steps are %.1fx fewer than the raw count suggests."
+              % (st / max(sl, 1)))
+        print("\n    A geodesic measured in raw steps is measuring notation.")
+        print("    The logical-only column is the length worth minimising.")
+
+    longest = max(zip(total, thms))
+    print("\n  longest proof   %s at %s steps"
+          % (longest[1], f"{longest[0]:,}"))
+
+    print("\n  MOST-CITED, ALL LABELS  (proofs citing it, of %s)"
+          % f"{len(total):,}")
+    for lab, n in sorted(cites_all.items(), key=lambda kv: -kv[1])[:10]:
+        print("    %-12s %7s   %s" % (lab, f"{n:,}", kind.get(lab, "?")))
+
+    print("\n  MOST-CITED LOGICAL LABELS  <- the real premise-selection prior")
+    for lab, n in sorted(cites_logic.items(), key=lambda kv: -kv[1])[:15]:
+        print("    %-12s %7s" % (lab, f"{n:,}"))
     print()
 
 
@@ -709,11 +795,62 @@ def cmd_selftest(a):
     return 0 if not bad else 1
 
 
+def cmd_search(a):
+    """Find labels whose statement contains all the given tokens.
+
+    Exists because guessing set.mm label names is unreliable.  Before writing
+    'apply sbth here', check that sbth says what you think it says."""
+    mm = load(a.file)
+    kind = classify(mm)
+    want = a.tokens
+    hits = []
+    for lab in mm.order:
+        typ, data = mm.labels[lab]
+        if typ in ("$e", "$f"):
+            if a.all_types:
+                stat = data
+            else:
+                continue
+        else:
+            stat = data[3]
+        if a.logical_only and kind.get(lab) != "logic":
+            continue
+        if a.prefix and not lab.startswith(a.prefix):
+            continue
+        s = " ".join(stat)
+        if all(w in s for w in want):
+            hits.append((lab, typ, s))
+
+    print("\n  %s match%s%s"
+          % (f"{len(hits):,}", "" if len(hits) == 1 else "es",
+             " for %s" % " + ".join(repr(w) for w in want) if want else ""))
+    if a.prefix:
+        print("  (label prefix %r)" % a.prefix)
+    print()
+    for lab, typ, s in hits[:a.limit]:
+        if len(s) > 92:
+            s = s[:89] + "..."
+        print("    %-14s %-3s %s" % (lab, typ, s))
+    if len(hits) > a.limit:
+        print("\n    ... %s more (raise --limit)" % f"{len(hits) - a.limit:,}")
+    print()
+
+
 def main():
     ap = argparse.ArgumentParser(prog="metamath", description=__doc__,
             formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("selftest", help="verify the verifier (no files needed)")
+
+    q = sub.add_parser("search", help="find labels by statement content")
+    q.add_argument("tokens", nargs="*", help="all of these must appear")
+    q.add_argument("--file", default="set.mm")
+    q.add_argument("--prefix", default=None, help="label starts with this")
+    q.add_argument("--limit", type=int, default=40)
+    q.add_argument("--logical-only", action="store_true",
+                   help="skip grammar rules")
+    q.add_argument("--all-types", action="store_true",
+                   help="include $e and $f too")
 
     v = sub.add_parser("verify", help="verify proofs")
     v.add_argument("file", nargs="?", default="set.mm")
@@ -724,6 +861,9 @@ def main():
 
     s = sub.add_parser("stats", help="corpus statistics")
     s.add_argument("file", nargs="?", default="set.mm")
+    s.add_argument("--logical", action="store_true",
+                   help="separate reasoning steps from formula-building steps "
+                        "(decompresses every proof; slower)")
 
     w = sub.add_parser("show", help="show one theorem in full")
     w.add_argument("file", nargs="?", default="set.mm")
@@ -731,6 +871,7 @@ def main():
 
     a = ap.parse_args()
     if a.cmd == "selftest": sys.exit(cmd_selftest(a))
+    elif a.cmd == "search": cmd_search(a)
     elif a.cmd == "verify":  sys.exit(cmd_verify(a))
     elif a.cmd == "stats": cmd_stats(a)
     elif a.cmd == "show":  sys.exit(cmd_show(a))
