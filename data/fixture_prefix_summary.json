@@ -1,0 +1,42 @@
+{
+  "database": "fixture.mm",
+  "base_mode": "prefix",
+  "targets": 60,
+  "solved": 60,
+  "solve_rate": 1.0,
+  "certificates_emitted": 60,
+  "cv_rejections": 0,
+  "solves_shorter_than_human": 55,
+  "solves_in_one_logic_step": 19,
+  "completeness_threshold_logic_steps": 9,
+  "by_logic_depth": {
+    "3": {
+      "solved": 5,
+      "targets": 5
+    },
+    "5": {
+      "solved": 9,
+      "targets": 9
+    },
+    "7": {
+      "solved": 24,
+      "targets": 24
+    },
+    "9": {
+      "solved": 22,
+      "targets": 22
+    }
+  },
+  "grid": {
+    "budgets": [
+      1000,
+      5000,
+      20000
+    ],
+    "depths": [
+      6,
+      12
+    ],
+    "wall_seconds": 3.0
+  }
+}

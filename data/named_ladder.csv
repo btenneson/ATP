@@ -1,0 +1,21 @@
+target,statement,budget,max_depth,outcome,expansions,seconds,cv_verdict,logic_steps,proof_steps
+id,( ph -> ph ),5000,12,proved,36,0.06,ok,5,40
+a1i-cl,( ph -> ( ps -> ph ) ),5000,12,proved,2,0.0,ok,1,3
+imim2,( ( ph -> ps ) -> ( ( ch -> ph ) -> ( ch -> ps ) ) ),5000,12,proved,217,0.42,ok,7,133
+pm2.27,( ph -> ( ( ph -> ps ) -> ps ) ),5000,12,timeout,-1,2.31,,,
+imim1,( ( ph -> ps ) -> ( ( ps -> ch ) -> ( ph -> ch ) ) ),5000,12,timeout,-1,2.23,,,
+pm2.04,( ( ph -> ( ps -> ch ) ) -> ( ps -> ( ph -> ch ) ) ),5000,12,timeout,-1,2.09,,,
+pm2.21,( -. ph -> ( ph -> ps ) ),5000,12,proved,197,0.15,ok,7,96
+pm2.24,( ph -> ( -. ph -> ps ) ),5000,12,timeout,-1,2.01,,,
+con3,( ( ph -> ps ) -> ( -. ps -> -. ph ) ),5000,12,timeout,-1,2.07,,,
+notnot1,( ph -> -. -. ph ),5000,12,timeout,-1,2.08,,,
+notnot2,( -. -. ph -> ph ),5000,12,timeout,-1,2.07,,,
+con1,( ( -. ph -> ps ) -> ( -. ps -> ph ) ),5000,12,timeout,-1,2.08,,,
+con2,( ( ph -> -. ps ) -> ( ps -> -. ph ) ),5000,12,timeout,-1,2.04,,,
+pm2.01,( ( ph -> -. ph ) -> -. ph ),5000,12,timeout,-1,2.09,,,
+pm2.18,( ( -. ph -> ph ) -> ph ),5000,12,timeout,-1,2.13,,,
+peirce,( ( ( ph -> ps ) -> ph ) -> ph ),5000,12,timeout,-1,2.0,,,
+pm2.27,( ph -> ( ( ph -> ps ) -> ps ) ),60000,12,exhausted,18480,6.09,,,
+imim1,( ( ph -> ps ) -> ( ( ps -> ch ) -> ( ph -> ch ) ) ),60000,12,exhausted,19508,8.19,,,
+pm2.04,( ( ph -> ( ps -> ch ) ) -> ( ps -> ( ph -> ch ) ) ),60000,12,exhausted,20478,7.22,,,
+pm2.24,( ph -> ( -. ph -> ps ) ),60000,12,exhausted,18368,6.05,,,
