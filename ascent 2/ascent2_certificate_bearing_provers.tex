@@ -1,0 +1,799 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue,citecolor=black]{hyperref}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{definition}{Definition}
+\newtheorem{remark}{Remark}
+
+\newcommand{\Sig}[2]{\Sigma^{#1}_{#2}}
+\newcommand{\Pai}[2]{\Pi^{#1}_{#2}}
+\newcommand{\Del}[2]{\Delta^{#1}_{#2}}
+\newcommand{\shortest}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\lev}{\operatorname{lev}}
+\newcommand{\tier}{\operatorname{tier}}
+\newcommand{\ATP}{\mathrm{ATP}}
+\renewcommand{\Pr}{\mathrm{Pr}}
+
+\definecolor{codebg}{gray}{0.97}
+\lstset{
+  basicstyle=\ttfamily\scriptsize, backgroundcolor=\color{codebg},
+  commentstyle=\color{teal}\itshape, keywordstyle=\color{blue!60!black}\bfseries,
+  stringstyle=\color{red!50!black}, breaklines=true, columns=fullflexible,
+  showstringspaces=false, numbers=left, numberstyle=\tiny\color{gray},
+  numbersep=6pt, xleftmargin=2em, upquote=true,
+}
+
+\title{\bfseries Certificate-Bearing Theorem Provers\\[0.4em]
+\large Theory, Measurement, and a Parameterised Self-Certifying System}
+\author{Brian Tenneson\\[0.3em]
+{\small Implementation and experiments by Claude (Anthropic)}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This document records a complete investigation into what limits an automated
+theorem prover, carried out in theory and in running code. Part~I separates
+two measures that are routinely conflated --- the arithmetical \emph{tier} of
+a target, and $\shortest{\cdot}$, the length of its shortest proof --- and
+argues that only the second is a real obstruction. Part~II reports
+measurements of Predator~7.1 against Metamath's \texttt{set.mm}: 3/52 genuine
+solves once one-step lemma lookups are excluded, zero certificate rejections
+across 124 certificates, and a case in which the verifier caught a harness bug
+that had inflated the apparent score from 1/6 to a false 8/8. Part~III presents
+Ascent, a self-certifying prover built from scratch whose reflection ladder is
+discharged rung by rung by its own kernel, and establishes two propositions
+about it: a kernel-checked necessitation rule forces $\lev = \omega$, so the
+level distribution over self-certifying machines is bimodal with nothing
+between; and level and proving power are independent parameters, verified over
+a 36-point grid. Part~IV runs three staged rule changes with measurement at
+each step, isolating what negation rules, a lemma pool, and a search heuristic
+each buy. Part~V is a full record of the errors found while auditing this
+work --- eight of them, including one genuine unsoundness and one self-inflicted
+file corruption --- because the distribution of how they were found is itself
+the most transferable result here: every substantive bug was caught by an
+adversarial test and none by re-reading code.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\part*{Part I --- Theory}
+\addcontentsline{toc}{part}{Part I --- Theory}
+
+\section{Two measures}
+
+\paragraph{Height.} The arithmetical \emph{tier} of a sentence counts
+alternations of unbounded quantifiers over $\mathbb{N}$ in prenex form, with
+bounded quantifiers costing nothing. It measures how much unbounded search is
+built into the \emph{statement}.
+
+\paragraph{Length.} For a sentence $L$ and a formal system $F$, write
+$\shortest{L}_F$ for the number of symbols in the shortest $F$-proof of $L$.
+This is a property of the theorem--system pair, finite exactly when $L$ is a
+theorem. It says nothing about how hard the proof is to \emph{find}, only how
+big it is once found.
+
+These are independent. A tier-$0$ sentence can have astronomically long proofs;
+a $\Pai{0}{2}$ sentence can have a three-line proof.
+
+\section{Reading $\Sig{0}{n}$ and $\Pai{0}{n}$}\label{sec:notation}
+
+Three independent pieces of information.
+
+\paragraph{The letter --- which quantifier leads.} $\Pai{}{}$ means the
+outermost unbounded block is $\forall$; $\Sig{}{}$ means it is $\exists$. The
+letters are not arbitrary: a $\Sig{0}{1}$ set $\{n : \exists m\, R(n,m)\}$ is a
+countable \emph{union} --- a sum --- of decidable sets, one per candidate
+witness; a $\Pai{0}{1}$ set is a countable \emph{intersection}, a product. Same
+$\Sigma$ and $\Pi$ as in $\sum$ and $\prod$.
+
+\paragraph{The subscript --- how many alternations.} Group adjacent like
+quantifiers into blocks and count the blocks. $\forall x \forall y \forall z\,
+\varphi$ is one block, hence $\Pai{0}{1}$; $\forall x \exists y\, \varphi$ is
+two, hence $\Pai{0}{2}$; $\exists x \forall y \exists z\, \varphi$ is three,
+hence $\Sig{0}{3}$. Only \emph{switching} increments the subscript.
+
+\paragraph{The superscript --- what the variables range over.} Superscript $0$:
+over \textbf{numbers} --- the \emph{arithmetical} hierarchy. Superscript $1$:
+over \textbf{sets} of numbers, equivalently functions $\mathbb{N} \to
+\mathbb{N}$ --- the \emph{analytical} hierarchy, a far taller ladder sitting
+entirely above the arithmetical one. This is the piece that matters for the
+Clay problems: Yang--Mills and Navier--Stokes quantify over objects that are
+not numbers, so no arithmetical prover can even state them.
+
+\paragraph{Two conventions.} $\Del{0}{n}$ is what is both $\Sig{0}{n}$ and
+$\Pai{0}{n}$. And \textbf{bounded quantifiers are free}: to check $\forall x <
+5\, \varphi(x)$ you evaluate $\varphi$ five times, so it costs nothing.
+
+\begin{center}
+\begin{tabular}{@{}llp{7.2cm}@{}}
+\toprule
+class & example & what settling it takes \\
+\midrule
+$\Del{0}{0}$ & $2+2 = 4$ & Compute. \\
+$\Sig{0}{1}$ & $\exists x\; x\cdot x = 49$ & Search: if true you find it, if
+false you search forever. Semi-decidable. \\
+$\Pai{0}{1}$ & $\forall x\; x < Sx$ & One counterexample refutes it. Goldbach,
+RH and $\mathrm{Con}(\mathrm{PA})$ live here. \\
+$\Pai{0}{2}$ & $\forall x \exists y\; x < y$ & For every input a witness
+exists. ``Halts on every input'' is $\Pai{0}{2}$-\emph{complete}. \\
+$\Sig{0}{2}$ & $\exists x \forall y\; x \le y$ & Some $x$ works for all $y$. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Post's theorem gives the subscript an operational reading: $\Sig{0}{n+1}$ is
+exactly $\Sig{0}{1}$ relative to a $\Sig{0}{n}$ oracle, so each alternation is
+worth one more halting oracle. \textbf{Tiers measure oracle resources, not
+difficulty.} $\forall n \exists m > n\,(m$ even$)$ is $\Pai{0}{2}$ and trivial;
+Collatz is $\Pai{0}{2}$ and open.
+
+\section{Why tier cannot measure a prover}\label{sec:whynottier}
+
+A natural question is: what is the highest-tier sentence a given prover can
+settle? It has no useful answer, under either reading of ``tier''.
+
+\begin{proposition}[Syntactic tier is padding-degenerate]
+For every $n$ there is a $\Sig{0}{n}$ sentence with an $O(1)$-step proof.
+\end{proposition}
+Take $\forall m \exists k\,(k>m)$ and prefix quantifiers, weakening as needed.
+So if a prover proves anything at all, the supremum of the tiers it proves is
+unbounded, and the number measures nothing.
+
+\begin{proposition}[Semantic tier is truth-degenerate on sentences]
+Every provable sentence is true, and every true sentence is logically
+equivalent to $0=0$, which is $\Del{0}{0}$.
+\end{proposition}
+So under the semantic reading every theorem has tier $0$, for every prover.
+Semantic tier carries information only on formulas with free variables --- on
+the set $\{n : \varphi(n)\}$ --- not on a closed target.
+
+\begin{remark}
+Both readings collapse, so \emph{tier is not reported as a strength measure
+anywhere in this document}. Where it appears it describes the shape of a
+statement, never the power of a prover.
+\end{remark}
+
+\subsection{The questions that do have answers}
+
+\begin{itemize}
+\item \textbf{Completeness threshold.} The largest $d$ such that the prover
+settles \emph{every} target whose shortest proof from a fixed base $B$ has
+depth $\le d$. Base-relative --- which is honest, not a defect --- and a
+genuine invariant.
+\item \textbf{Certificate power versus search power.} A prover's certificates
+may be Frege proofs while its search reaches depth 3. These are independent
+axes and both must be reported. Conflating them is the standard error.
+\item \textbf{$p$-simulation.} Orders \emph{proof systems} by whether every
+proof in one translates in polynomial time into the other. It compares
+certificate power and says nothing about search.
+\end{itemize}
+
+\section{Levels of formal self-awareness}\label{sec:levels}
+
+Following the merged edition's Definition of Level-$n$: fix a tag
+$\langle M \rangle$ for the machine and an injective naming operator on
+formulas, and set
+\[
+\theta_0 := \ATP(\langle M \rangle), \qquad
+\theta_{k+1} := \Pr(\langle M \rangle, \langle \theta_k \rangle).
+\]
+$M$ has Level $n$ iff $M \vdash \theta_{n-1}$; $\lev(M) := \sup\{n \ge 1 : M
+\vdash \theta_{n-1}\}$, with $\sup \emptyset = 0$. Crucially $\Pr$ is a
+\emph{primitive} binary predicate, not an arithmetised provability predicate,
+and the Hilbert--Bernays--L\"ob conditions are not assumed. Consequently each
+$\theta_k$ is \emph{atomic}: it carries no logical content that could make it
+hard to prove.
+
+\subsection{Tier is flat along the level ladder}
+
+$\tier(\theta_k) = 0$ for every $k$ when $\Pr$ is primitive, since $\theta_k$
+is then quantifier-free. Arithmetising does not rescue it: a genuine
+$\mathrm{Prov}(\ulcorner \varphi \urcorner) = \exists p\,
+\mathrm{Proof}(p, \ulcorner \varphi \urcorner)$ is $\Sig{0}{1}$, and iterating
+stays $\Sig{0}{1}$ by provable $\Sigma_1$-completeness. \textbf{Level climbs to
+$\omega$; tier never moves.} The two are different axes, not two scales of one
+thing. Two further obstructions to any isomorphism: the arithmetical hierarchy
+is cumulative and the level hierarchy explicitly is not, and arithmetical
+strictness is proved by diagonalisation whereas level strictness is proved by
+inhabitation.
+
+\section{Cross-branch reuse}\label{sec:kappa}
+
+The settlement machine $M^{\otimes}$ pursues a conjecture $c$ and its negation
+on alternating stages over a shared lemma store $\Lambda$. Each $\lambda \in
+\Lambda$ carries an origin; $\lambda$ is \emph{available-crossed} if it enters
+the candidate set of the other branch, and \emph{use-crossed} if it is actually
+a premise of a step that branch takes. The rates are
+\[
+\kappa^{\mathrm{av}}_m = \frac{|\{\lambda \in \Lambda_m
+\text{ available-crossed}\}|}{|\Lambda_m|}, \qquad
+\kappa^{\mathrm{us}}_m = \frac{|\{\lambda \in \Lambda_m
+\text{ use-crossed}\}|}{|\Lambda_m|},
+\]
+both $0$ by convention when $\Lambda_m = \emptyset$, with $\kappa^{\bullet} =
+\limsup_m \kappa^{\bullet}_m$ and $\kappa^{\mathrm{us}} \le
+\kappa^{\mathrm{av}}$. The theory ties these to a \emph{settlement dividend}:
+$\kappa^{\mathrm{us}} = 0 \Rightarrow \Delta(c) = 0$, and
+$\kappa^{\mathrm{us}} > 0$ is necessary but not sufficient for a positive one.
+
+Cross-branch insertion is exactly \emph{cut}, and cut is the one mechanism in
+any of these systems that can change $\shortest{\cdot}$ asymptotically rather
+than merely reordering a search. This is the same phenomenon that separates
+Frege from extended Frege by an exponential: the extension rule permits
+definitions, definitions are conservative, and they can collapse proof length
+enormously.
+
+\section{The MU argument and the lift--attack--return schema}\label{sec:mu}
+
+Hofstadter's MIU system has axiom \textbf{MI} and four rules: $x\textbf{I} \to
+x\textbf{IU}$; $\textbf{M}x \to \textbf{M}xx$; $x\textbf{III}y \to
+x\textbf{U}y$; $x\textbf{UU}y \to xy$. Is \textbf{MU} a theorem? No. Let
+$\#\mathrm{I}(s)$ count the I's; then $\#\mathrm{I} \not\equiv 0 \pmod 3$ is
+invariant: the axiom has $\#\mathrm{I}=1$; rule 1 and rule 4 leave it unchanged;
+rule 3 removes three; rule 2 doubles it, and $2 \cdot \#\mathrm{I} \not\equiv 0$
+when $\#\mathrm{I} \not\equiv 0$ since $3$ is prime. But $\#\mathrm{I}
+(\textbf{MU}) = 0$. $\blacksquare$
+
+The argument uses three, divisibility, induction over derivations, and the
+primality of $3$. \textbf{None of these exist in MIU}, which has no numerals,
+no arithmetic, no negation and no theoremhood predicate. Its three phases:
+
+\begin{enumerate}
+\item \textbf{Lift} the system into a structure it cannot express
+($\mathbb{Z}/3$, via $s \mapsto \#\mathrm{I}(s) \bmod 3$).
+\item \textbf{Attack}: prove the invariance there. Arithmetic, not rewriting.
+\item \textbf{Return} the conclusion as a metatheorem \emph{about} the original
+system.
+\end{enumerate}
+
+The creative act is entirely phase 1. Phases 2 and 3 are routine.
+
+\paragraph{The schema is mechanizable exactly when the target structure is
+small.} The MU invariant is a homomorphism onto a structure of size 3; finding
+it is a finite model search and any finite model finder locates it in
+milliseconds. The MU puzzle is famous for surprising humans, not for being
+computationally deep. \textbf{Unprovability by finite invariant is the most
+automatable form of unprovability argument available.}
+
+\paragraph{The barrier results are this schema at scale.} Relativization lifts
+P vs NP into oracle machines, establishes that a class of techniques proves
+relativizing statements, exhibits oracles $A, B$ with $\mathrm{P}^A =
+\mathrm{NP}^A$ and $\mathrm{P}^B \neq \mathrm{NP}^B$, and returns the
+conclusion that no such technique settles the question. Natural proofs and
+algebrization have the same shape with different invariants. Where machines
+fail is phase 1 at scale: enumeration reaches structures of size 5, not
+``invent cryptography''.
+
+\part*{Part II --- Practice: Predator 7.1 on set.mm}
+\addcontentsline{toc}{part}{Part II --- Practice: Predator 7.1}
+
+\section{A correction to a previously reported figure}
+
+An earlier evaluation reported \textbf{4/11 on a named propositional ladder}
+and concluded that ``everything requiring ax-3 failed'', inferring that
+negation bounded the prover's competence. The base was
+\texttt{predator71.SELFTEST}, which declares
+\texttt{\$c wff |- ( ) -> /\textbackslash \$.} and the assertions
+\texttt{ax1}, \texttt{ax2}, \texttt{ax-mp}. \textbf{There is no
+\texttt{-.} in the language and no ax-3 among the axioms.} Targets such as
+\texttt{notnot1}, \texttt{con3}, \texttt{pm2.18} and \texttt{peirce} were not
+unprovable on that base --- they were \emph{unstatable}. A language defect had
+been read as a search ceiling.
+
+Re-measured against \texttt{set.mm}'s real propositional core (ax-1, ax-2,
+ax-3, ax-mp, negation present): \textbf{4/16, 0 CV rejections}, and a
+\emph{different} four. \texttt{pm2.21}, which is
+$(\lnot \varphi \to (\varphi \to \psi))$ --- negation, requires ax-3 --- is
+proved in 197 expansions with a CV-accepted certificate, while the
+negation-free \texttt{imim1} and \texttt{pm2.04} both fail. The proved/failed
+split follows neither negation nor ax-3 usage.
+
+All twelve failures are \textbf{exhausted}, not budget-bound: the frontier
+empties between 15{,}877 and 20{,}478 expansions against a 60{,}000 budget, and
+raising the budget to 200{,}000 changes nothing. Relaxing \texttt{max\_open}
+from 6 to 12 enlarges the searched space by $\sim$30\% and still finds nothing;
+raising depth past 12 makes the frontier explode without terminating.
+
+\paragraph{Root cause, from the source.} \texttt{prove()} accepts a
+\texttt{rank} parameter that \emph{no caller ever passes}, so the candidate
+ordering is inert; and the frontier priority is
+\texttt{node.depth + 1 - 0.0}. The search is breadth-first with a dead
+heuristic slot --- exponential in depth with no branch preference, which is
+exactly the observed profile.
+
+\section{The chronological-prefix protocol}
+
+For target $t$ at position $i$, index only \texttt{order[:i]} --- everything the
+human author had available and nothing later. Grade by the number of
+\emph{logical} steps in the human proof (\texttt{classify} separates
+\texttt{|-} steps from formula construction, $\sim$95\% of raw length). Sweep
+budgets $\times$ depths, stopping at the cheapest setting that works, and
+distinguish three failure modes: budget-bound ($\mathrm{exp} > $ budget),
+exhausted (frontier emptied --- more budget cannot help), and wall-bound.
+
+\section{Results on set.mm}
+
+47{,}572 theorems, 3{,}000 primitive assertions, closed targets only, human
+logical depth 1--5.
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+certified & \textbf{15/52} \\
+of those, one-step lemma lookups & \textbf{12} \\
+genuine multi-step search solves & \textbf{3/52} \\
+CV rejections & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{The lemma-availability confound.} A solve rate under a chronological
+prefix is not a search measure: if the database already contains a theorem that
+unifies with the goal, the prover closes it in one step and scores without
+reasoning. On a generated 60-theorem fixture, prefix mode gives 60/60 --- but 55
+of those proofs are \emph{shorter than the human's} and 19 are single-step. Any
+such rate must be reported with the found-versus-human step ratio or it
+measures the density of the library, not the power of the prover. Revision~2 of
+the companion document reaches the same conclusion independently, measuring
+that 4.7\% of \texttt{set.mm}'s logical assertions share both conclusion and
+hypotheses with another label.
+
+\paragraph{Saturation bias.} The same fixture gives 60/60 from axioms alone
+while the named ladder gives 4/16 from the same axioms --- because the fixture's
+targets were \emph{generated} by forward saturation under a size cap, so by
+construction they are what shallow search reaches. A benchmark generated by
+saturation will systematically overstate a shallow prover.
+
+\section{The verifier caught an unsound harness}\label{sec:cvcatch}
+
+This is the strongest single piece of evidence for the ATP/CV architecture in
+the whole investigation, and it arose by accident.
+
+Theorems such as \texttt{a1i} ($\varphi \vdash (\psi \to \varphi)$) have
+\texttt{\$e} hypotheses, and their bare conclusion is not a theorem --- so the
+first harness was scoring the prover for failing unprovable goals. The obvious
+repair, adjoining each hypothesis to the index as a closer, is \emph{wrong}:
+Predator renames every candidate's variables apart at each use, which turns the
+hypothesis into a schema, so $\varphi$ becomes universally quantified and
+unifies with anything.
+
+Under that repair the harness reported \textbf{8/8 solved}. \texttt{metamath.py}
+rejected \textbf{7 of the 8} certificates with ``proved the wrong statement''.
+The apparent score went from 1/6 to a false 8/8 and the verifier was the only
+thing that noticed.
+
+\section{Measuring $\kappa^{\mathrm{us}}$}
+
+The settlement machine of \S\ref{sec:kappa} was implemented over Predator's
+search with origin and use logging. Result: $\Lambda_m = \emptyset$ throughout,
+so $\kappa^{\mathrm{us}} = \kappa^{\mathrm{av}} = 0$ \emph{vacuously}.
+
+The reason is structural and worth recording. Definition of cross-branch
+insertion requires a \emph{ground} closed lemma. Predator's backward
+metavariable search never closes a ground subgoal on schematic targets --- every
+goal carries free variables --- so there is nothing to insert and the shared
+store stays empty. This is Corollary ``total separation'' reached trivially,
+and it is a fact about the search discipline, not about the conjecture. A
+prover whose store holds closed sentences (such as Ascent, Part~III) does not
+have this problem.
+
+\part*{Part III --- Ascent}
+\addcontentsline{toc}{part}{Part III --- Ascent}
+
+\section{Design}
+
+Ascent is a self-certifying prover over arithmetic, built from scratch: no
+external database, no dependencies beyond the standard library. Source in
+Appendix~\ref{app:ascent}.
+
+\paragraph{Language.} Terms are numerals, variables, eigenconstants, $S$, $+$,
+$\cdot$; atoms are $=, <, \le$ plus the reflection atoms $\ATP(\cdot)$ and
+$\Pr(\cdot,\cdot)$; formulas add $\lnot, \wedge, \vee, \to$, bounded
+$\forall x{<}t$ and $\exists x{<}t$, and unbounded $\forall, \exists$.
+
+\paragraph{Kernel.} The only trusted component. It checks $\Gamma \vdash \varphi$
+by structural recursion on a certificate, never searches, and has no self-model
+--- $\lev(\text{kernel}) = 0$ and must stay $0$. Rules: \texttt{calc},
+\texttt{hyp}, \texttt{lemma}, \texttt{impI}, \texttt{impE}, \texttt{andI},
+\texttt{andE}, \texttt{gen}, \texttt{inst}, \texttt{wit}, \texttt{allbI},
+\texttt{exbI}, \texttt{ind}, \texttt{nec}.
+
+\texttt{calc} is decided two ways: by evaluation when the formula is closed and
+$\Del{0}{0}$, and by \textbf{polynomial normalisation over $\mathbb{N}$} when it
+is symbolic. A term normalises to a polynomial with natural coefficients; an
+equality holds when the polynomials agree and fails when one side strictly
+dominates; an inequality holds when the difference has non-negative
+coefficients and a positive constant. This is the defining equations of $+$ and
+$\cdot$ applied as rewrites, so it needs no arithmetic axioms in the object
+language. It is deliberately incomplete.
+
+\paragraph{Three knobs}, all integers from 1, all monotone.
+
+\begin{center}
+\begin{tabular}{@{}llp{7.3cm}@{}}
+\toprule
+flag & meaning & what it buys \\
+\midrule
+\texttt{-d} & certificate-tree depth & proof \emph{structure}: nesting of
+\texttt{gen}, \texttt{ind}, implication \\
+\texttt{-w} & witness bound & \emph{arithmetic} reach: larger existentials \\
+\texttt{-r} & reflection depth & $\lev(A) = r$, each rung kernel-certified \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Self-certification and the reflection ladder}
+
+The reflection rule \emph{is} the verification call:
+\[
+\texttt{nec}(C) \text{ proves } \Pr(\langle A\rangle, \langle \varphi\rangle)
+\quad\text{provided the kernel accepts } C : \varphi.
+\]
+No rung is stipulated; each carries a certificate the same kernel re-checks.
+
+\begin{proposition}[Why a self-certifier does not stall]\label{prop:omega}
+If $A$ has kernel-checked necessitation and its kernel is sound, then
+$\lev(A) = \omega$.
+\end{proposition}
+\begin{proof}
+$A \vdash \theta_0$ by the base certificate. If $A \vdash \theta_k$ with
+certificate $C_k$, the kernel accepts $C_k$, so $\texttt{nec}(C_k)$ is a
+certificate of $\theta_{k+1}$. Induction.
+\end{proof}
+
+Each rung costs exactly one kernel call on the previous certificate, so no rung
+is harder than the last. Hence the level distribution over self-certifying
+machines is \textbf{bimodal at $\{0,1\}$ and $\omega$, with nothing between}: a
+machine either has the rule and runs away, or lacks it and never passes
+$\theta_0$. \textbf{Finite $\lev > 1$ is achievable only by a resource bound},
+which is precisely what \texttt{-r} is --- not a tuning constant but the only
+thing that can make the level finite and nontrivial.
+
+\paragraph{Direction of dependence.} Verification grounds the self-model, never
+the reverse. A machine trusting its own certificates \emph{because} it had
+proved itself trustworthy would have a reflection principle ``if I prove
+$\varphi$ then $\varphi$'', from which $\varphi$ follows outright by L\"ob ---
+unsound or vacuous. Here $\Pr$ is primitive and reflection is never assumed;
+the machine only reports verifications that already happened.
+
+\section{$\tier(\text{Ascent}) = d$}\label{sec:tierisd}
+
+Each quantifier block costs exactly one certificate node to discharge
+(\texttt{gen} for $\forall$, \texttt{wit} for $\exists$), so a target with $n$
+blocks needs depth $n$ and no more. Measuring the first depth at which each
+target certifies:
+
+\begin{center}
+\begin{tabular}{@{}llcccccc@{}}
+\toprule
+target & tier & $d{=}1$ & $2$ & $3$ & $4$ & $5$ & $6$ \\
+\midrule
+$\forall x\exists y\forall z\; x < y{+}z$ & $\Pai{0}{3}$
+  & --- & --- & \checkmark & \checkmark & \checkmark & \checkmark \\
+$\exists x\forall y\exists z\; y \le x{+}z$ & $\Sig{0}{3}$
+  & --- & --- & \checkmark & \checkmark & \checkmark & \checkmark \\
+$\forall x\exists y\forall z\exists u\; x \le y{+}z{+}u$ & $\Pai{0}{4}$
+  & --- & --- & --- & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$\Pai{0}{3}$ first appears at exactly $d=3$, $\Pai{0}{4}$ at exactly $d=4$.
+Hence $\tier(\text{Ascent}(d,w,r)) = d$, independently of $w$ and $r$.
+\textbf{Tier is a command-line flag.}
+
+Against the Millennium Problems: Ascent passes the height of the Riemann
+Hypothesis ($\Pai{0}{1}$) at $d=1$ and that of P vs NP ($\Pai{0}{2}$) at $d=2$,
+and settles neither at any $d$. The only row where tier is a real barrier is
+the analytical one --- Hodge, Navier--Stokes, Yang--Mills --- where no integer
+parameter moves an arithmetical prover into a higher-order hierarchy.
+
+\subsection{Does equal tier mean comparable?}
+
+No. $\Pai{0}{2}$ contains both $\forall x \exists y\; x<y$, which Ascent proves
+in 13 nodes, and ``halts on every input'', which is $\Pai{0}{2}$-complete. P
+$\neq$ NP is only known to be \emph{in} the class, not complete for it. The
+notion that would license comparison is reducibility, and none exists in either
+direction between Ascent's targets and P vs NP.
+
+What equal tier buys is the removal of one excuse --- and only partly. Ascent's
+signature is PA's, in which Turing machine computation is arithmetisable, so
+P $\neq$ NP is expressible in the model-theoretic sense. But Ascent has
+\textbf{no definitional mechanism}: no abbreviations, no extension rule. The
+sentence one would have to supply is the fully expanded arithmetisation, which
+is astronomically large. Expressible in principle; unwritable in practice ---
+and that gap is itself an instance of the thesis, since the missing feature is
+exactly the extension rule.
+
+\section{Which parameter buys strength}\label{sec:whichparam}
+
+Marginal value of each knob, measured on the 18-target suite of Part~IV under
+the full rule set:
+
+\begin{center}
+\begin{tabular}{@{}rlrl@{}}
+\toprule
+\multicolumn{2}{c}{$d$ (depth), $u=12$} & \multicolumn{2}{c}{$u$ (witness), $d=4$} \\
+\midrule
+$d=1$ & 7/18          & $u=1$  & 15/18 \\
+$d=2$ & 12/18 \ (+5)  & $u=4$  & 16/18 \ (+1) \\
+$d=3$ & 14/18 \ (+2)  & $u=8$  & 17/18 \ (+1) \\
+$d=4$ & 17/18 \ (+3)  & $u=12$ & 17/18 \ (+0) \\
+$d=5$ & 18/18 \ (+1)  & $u=20$ & 17/18 \ (+0) \\
+$d=6$ & 18/18 \ (+0)  & $u=30$ & 17/18 \ (+0) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{$d$ dominates: $7 \to 18$ across its range. $u$ contributes $+2$ and
+saturates at $8$. $r$ contributes nothing.} The reason is structural rather
+than empirical: $d$ is the only knob that raises the \emph{tier ceiling}
+(\S\ref{sec:tierisd}), so it changes which class of statement is reachable at
+all, whereas $u$ only fills in density within an already-reachable tier.
+
+The honest qualification: \textbf{no knob was the strongest lever}. Part~IV
+shows that adding inference rules bought $+4$ and adding a lemma pool bought
+$+2$, each at fixed parameters --- and the pool is the only mechanism among all
+of them that touches $\shortest{\cdot}$ rather than search order. Parameters
+explore the space the rules define; they cannot enlarge it.
+
+\begin{proposition}[The knobs are independent]\label{prop:indep}
+$\lev(A) = r$ regardless of $d$ and $w$; the set of certified arithmetical
+theorems is a function of $(d,w)$ and independent of $r$.
+\end{proposition}
+
+Verified over $d \in \{1,2,3,5\} \times w \in \{1,8,20\} \times r \in
+\{1,3,8\}$, 36 configurations, by an assertion in the harness itself:
+
+\begin{center}
+\begin{tabular}{@{}cclc@{}}
+\toprule
+$d$ & $w$ & certified & tiers reached \\
+\midrule
+1 & 1  & 6/12 & $\Del{0}{0}, \Pai{0}{1}$ \\
+1 & 20 & 9/12 & $\Del{0}{0}, \Pai{0}{1}, \Sig{0}{1}$ \\
+2 & 1  & 9/12 & $+\ \Pai{0}{2}, \Sig{0}{2}$ \\
+2 & 20 & \textbf{12/12} & all five \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Raising $r$ from 1 to 8 raises $\lev$ from 1 to 8 and certifies \textbf{zero}
+additional theorems. Formal self-awareness, on the reflection-ladder
+definition, is free, certified, and inert.
+
+\part*{Part IV --- Regime changes}
+\addcontentsline{toc}{part}{Part IV --- Regime changes}
+
+\section{Change, test, repeat}
+
+Three staged rule changes, each measured against the last on one 18-target
+suite spanning tier 0--5, negated targets, and lemma-dependent targets.
+Soundness is re-checked at every stage, because adding rules is exactly where a
+kernel breaks.
+
+\begin{center}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+regime & certified & $\Delta$ & nodes on certified & soundness \\
+\midrule
+R0 base   & 11/18 & ---            & 106 & 13/13 \\
+R1 $+$neg & 15/18 & \textbf{$+4$}  & 153 \ ($+44\%$) & 13/13 \\
+R2 $+$pool& 17/18 & \textbf{$+2$}  & 161 \ ($+5\%$)  & 13/13 \\
+R3 $+$rank& 17/18 & $+0$           & \textbf{83 \ ($-48\%$)} & 13/13 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{R1 --- negation, disjunction, $\exists$-elimination, cut.} Gained
+exactly the four negated targets. P $\neq$ NP is a negation and the base rule
+set had no rule that introduces one, at any parameter setting; this is the
+layer-1 fix. Proving $\lnot(\exists x\, Sx = 0)$ needs \texttt{notI},
+\texttt{exE}, and a decision procedure that can refute $Sc = 0$ for symbolic
+$c$ --- none of which existed at R0.
+
+\paragraph{R2 --- the lemma pool.} Gained exactly the two pool targets, and
+certified \emph{more while spending fewer nodes}. A target needing depth 5 from
+scratch fits in depth 2 when its conjuncts are one-node citations. This is cut
+buying proof \emph{length}, and it answers the question of whether learning a
+corpus of already-proven theorems adds strength: empirically yes, and
+structurally, because citation cost is independent of how hard the lemma was.
+
+\paragraph{R3 --- the rank heuristic.} Moved zero coverage and halved certified
+work, which is exactly what a policy should do: it can only reorder what the
+rules already made reachable.
+
+\subsection{Two failures worth more than the successes}
+
+The first version of the heuristic made the suite \emph{slower} ($+10$ nodes).
+Per-target diagnosis showed it helping where predicted --- \texttt{pi3} $-33$,
+\texttt{unbounded} $-24$ --- and losing more on ground existentials
+(\texttt{min\_exists} $+50$), whose witness is the numeral $0$ but which were
+being sorted behind symbolic terms. There are three regimes, not one:
+refutation of a universal hypothesis (small numerals first), witnessing under an
+eigenconstant (overlap first), and witnessing a closed goal (numerals only,
+since no eigenconstant exists to build from).
+
+The corrected heuristic then \emph{silently did nothing}, because the feature it
+keyed on --- \texttt{syms()} --- also returns \textbf{bound variable} names. On a
+closed goal $\exists x \forall y.\, x \le y$ it returns $\{x,y\}$, so the
+``closed goal'' branch never fired and overlap was being scored against
+binders. Keyed on eigenconstants instead: $-48\%$.
+
+\textbf{A learned policy trained against that same broken feature would have
+reported a gain over a strawman.} This is the argument for building a hand
+baseline before fitting a model to the slot.
+
+\section{Where machine learning fits}
+
+Five levers, ranked by leverage: (1) the \emph{rule set}, which determines what
+is derivable at all; (2) \emph{proof-system strength} --- definitions, lemmas,
+cut --- the only lever that changes $\shortest{\cdot}$; (3) \emph{redundancy
+elimination} --- subsumption, demodulation, term orderings, indexing --- which is
+what actually built the strong provers and is consistently underrated from the
+logic side; (4) \emph{search strategy} and portfolios; (5) \emph{decision
+procedures}, which replace search with computation where a theory is decidable.
+
+ML owns two of these convincingly. \textbf{Premise selection} in a large
+library is a ranking problem with free training data, since every existing
+proof is a labelled example. \textbf{Search guidance} --- learned clause
+selection, learned step prediction, MCTS over proof states --- has measured
+gains on exactly this corpus: Holophrasm reported 14.3\% over a 2{,}720-theorem
+\texttt{set.mm} test set and GPT-f roughly 56\%.
+
+What ML does \emph{not} do: it is a \emph{policy}. It changes which branch you
+explore first. It does not change $\shortest{\cdot}$ --- a perfect oracle policy
+still has to emit a $10^{100}$-symbol proof if that is the shortest one --- and
+it adds no inference rules. ML owns the gap between ``a short proof exists'' and
+``search finds it''. That gap is large and worth attacking; it is not the gap
+the Clay problems sit in.
+
+The one place ML could touch the harder question is \textbf{lemma invention}: a
+model proposing good intermediate lemmas is the extension rule applied
+intelligently, and that \emph{does} change $\shortest{\cdot}$. It is also
+phase~1 of the MU schema (\S\ref{sec:mu}), and would give the settlement machine
+of \S\ref{sec:kappa} a principled insertion policy in place of ``whatever
+happens to be ground''.
+
+\part*{Part V --- Audit}
+\addcontentsline{toc}{part}{Part V --- Audit}
+
+\section{Every error found}
+
+The audit ran to a fixed point over seven passes. Passes 1--2 found substantive
+errors, pass 3 found dead code, pass 4 was clean, pass 5's \emph{correction
+introduced a new defect}, pass 6 repaired it, pass 7 was clean.
+
+\begin{center}
+\begin{longtable}{@{}rp{4.6cm}p{7.4cm}@{}}
+\toprule
+\# & error & nature and resolution \\
+\midrule
+\endhead
+1 & \texttt{exE} omitted the lemma store from its freshness check &
+\textbf{Genuine unsoundness.} With $\lnot(w{=}0)$ stored, opening the true
+$\exists x\, x{=}0$ over $w$ yields $\bot$ from a consistent store --- so the
+kernel could prove anything. The 12/12 probe battery missed it because no such
+probe existed. Fixed; added as a permanent regression probe. \\
+2 & \texttt{sub()} captured variables &
+$\mathrm{sub}(\forall y.\, x{=}y,\; x := y)$ returned $\forall y.\, y{=}y$. The
+callers were safe by accident, but \texttt{ind} substitutes a variable-bearing
+term, so the guarantee should not have rested on caller discipline. Binders now
+renamed apart. \\
+3 & \texttt{tier()} ignored contravariance &
+Treated $A \to B$ as symmetric, reporting $(\forall x.P) \to (\exists y.Q)$ as
+$\Pai{0}{1}$ when it is $\Sig{0}{1}$. Polarity now tracked explicitly. \\
+4 & \texttt{tier()} mis-joined mixed leads &
+Reported $\Sig{0}{1} \wedge \Pai{0}{1}$ as $\Sig{0}{1}$; it is $\Del{0}{2}$ and
+in neither. \\
+5 & Witness generation keyed on \texttt{syms()} &
+Which returns bound-variable names, manufacturing candidate constants for every
+binder. Not unsound, but it silently disabled a heuristic branch and wasted
+expansions. \\
+6 & Note claimed Ascent can state P $\neq$ NP, flatly &
+True model-theoretically, misleading in practice: no definitional mechanism, so
+the sentence is unwritable. Corrected and reframed as an instance of the thesis. \\
+7 & Note reported $\tier(\text{Ascent}) = 2$ &
+An artifact of the default suite. It is $= d$, now measured to $\Pai{0}{4}$. \\
+8 & A ``correction'' corrupted a source file &
+A removal script sliced against a marker that occurred \emph{after} its target,
+duplicating a 120-line region instead of deleting one. Caught by a duplicate
+definition scan in the next pass; repaired. \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+One further item was a defective \emph{test}, not defective code: the battery
+asserted that $(\exists x.P) \to (\exists x.P)$ should be $\Pai{0}{1}$. It is
+$(\forall x.\lnot P) \vee (\exists x.P)$ --- mixed leads, hence $\Del{0}{2}$
+syntactically, even though it is a tautology and therefore semantically
+$\Del{0}{0}$. The code was right. The case was kept in the battery precisely
+because it illustrates \S\ref{sec:whynottier}.
+
+\section{What the audit is made of}
+
+\texttt{audit.py} (Appendix~\ref{app:audit}) runs five independent checks, none
+of which trusts a component's opinion of itself:
+
+\begin{enumerate}
+\item \textbf{Fuzz the decision procedure.} Generate random formulas over
+symbolic constants; wherever \texttt{decide()} commits to True or False, verify
+by brute force over every assignment in a finite box. 6{,}000 formulas per
+procedure, 3{,}276 committed verdicts, \textbf{0 wrong}.
+\item \textbf{Substitution regression.} Capture attempts, plus the requirement
+that shadowing be a no-op.
+\item \textbf{Tier regression.} Eleven hand-computed classifications including
+contravariance and mixed leads.
+\item \textbf{Freshness exploits.} Attempts to smuggle a committed constant
+past \texttt{gen} and \texttt{exE} from the goal, the context, and the store.
+\item \textbf{Certify-then-recheck.} Every certificate the search produces is
+re-verified by a \emph{freshly constructed} kernel, and the certified formula is
+additionally checked true by brute force wherever checkable.
+\end{enumerate}
+
+\section{The transferable finding}
+
+Every substantive bug in this work --- the \texttt{exE} unsoundness, the
+substitution capture, the tier contravariance, the file corruption --- was found
+by an adversarial test. \textbf{None was found by re-reading code.} The probe
+battery reported 13/13 while carrying an unsoundness, because a battery catches
+only what someone thought to write down; the fuzzer and the exploit attempts
+catch what nobody thought of. After every rule added to a kernel, the cheap
+move is to re-run the fuzzer and the freshness exploits before trusting a
+coverage number.
+
+A corollary with teeth for the ML programme: an unmeasured baseline is worse
+than none. The rank heuristic was, in succession, slower than nothing and then
+silently inert, and both states would have looked like success to a model
+trained against the same features.
+
+\section{Conclusions}
+
+\begin{enumerate}
+\item \textbf{Tier is not an obstruction, and is not a strength measure.} It is
+padding-degenerate syntactically and truth-degenerate semantically, and in
+Ascent it is literally a command-line flag: $\tier = d$.
+\item \textbf{$\shortest{\cdot}$ is the obstruction} --- but for any concrete
+prover, rule-set incompleteness bites first, and that is mundane and fixable.
+\item \textbf{Level and proving power are orthogonal}, measured over 36
+configurations. A kernel-checked necessitation rule forces $\lev = \omega$, so
+finite level is purely a resource bound.
+\item \textbf{Certification is what grounds a self-model}, not the reverse; the
+converse is the L\"ob trap.
+\item \textbf{Cut is the only lever here that changes proof length.} Lemma
+pooling delivered more coverage at lower cost, and is where cross-branch reuse
+and lemma invention both point.
+\item \textbf{The verifier earns its keep.} It caught a harness bug that had
+inflated an apparent score four-fold, and it is the reason every number in
+Part~II can be quoted at all.
+\end{enumerate}
+
+\appendix
+\section{The two numbers}
+
+$\lev(\text{Ascent}(r)) = r$, and $\lev(\text{Ascent}) = \omega$ when $r$ is
+unbounded (Proposition~\ref{prop:omega}); every rung certified rather than
+stipulated. $\tier(\text{Ascent}(d,w,r)) = d$, independently of $w$ and $r$,
+verified to $\Pai{0}{4}$.
+
+\section{Ascent}\label{app:ascent}
+\lstinputlisting[language=Python]{ascent.py}
+
+\section{Ascent 2 --- staged regimes}\label{app:ascent2}
+\lstinputlisting[language=Python]{ascent2.py}
+
+\section{The audit}\label{app:audit}
+\lstinputlisting[language=Python]{audit.py}
+
+\end{document}

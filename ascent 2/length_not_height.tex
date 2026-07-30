@@ -1,0 +1,760 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage[colorlinks=true,linkcolor=black,urlcolor=blue]{hyperref}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{definition}{Definition}
+
+\newcommand{\Sig}[2]{\Sigma^{#1}_{#2}}
+\newcommand{\Pai}[2]{\Pi^{#1}_{#2}}
+\newcommand{\Del}[2]{\Delta^{#1}_{#2}}
+\newcommand{\shortest}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\lev}{\operatorname{lev}}
+\newcommand{\tier}{\operatorname{tier}}
+\newcommand{\ATP}{\mathrm{ATP}}
+\renewcommand{\Pr}{\mathrm{Pr}}
+
+\definecolor{codebg}{gray}{0.97}
+\definecolor{codecmt}{rgb}{0.30,0.45,0.30}
+\definecolor{codekw}{rgb}{0.10,0.20,0.60}
+\definecolor{codestr}{rgb}{0.60,0.20,0.10}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  backgroundcolor=\color{codebg},
+  commentstyle=\color{codecmt}\itshape,
+  keywordstyle=\color{codekw}\bfseries,
+  stringstyle=\color{codestr},
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  showstringspaces=false,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=6pt,
+  frame=none,
+  xleftmargin=2em,
+  upquote=true,
+}
+
+\title{\bfseries Length, Not Height\\[0.4em]
+\large On proof-length lower bounds, the MU argument, and whether a
+self-aware theorem prover could ever settle a Clay problem}
+\author{Brian Tenneson}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+We distinguish two obstructions standing between an automated theorem prover
+and a Millennium Prize Problem, and argue that they are almost always
+confused. The first is \emph{height}: the arithmetical tier of the target,
+measured by alternations of unbounded quantifiers over $\mathbb{N}$. The
+second is \emph{length}: the size of the shortest proof of the target from
+the axioms, written $\shortest{\cdot}$. We exhibit a working prover, Ascent,
+whose tier is a \emph{command-line parameter} --- $\tier(\text{Ascent}) = t$
+exactly, measured up to $\Pai{0}{4}$ --- so that it passes through the tier of
+``$\mathrm{P} \neq \mathrm{NP}$'' at $t = 2$ and keeps going, while remaining
+hopeless on that target at every setting. Tier is therefore not the binding
+constraint, and we
+argue that lower bounds on $\shortest{\mathrm{P} \neq \mathrm{NP}}$ are the
+quantity worth pursuing, because a sufficiently large one would retire
+mechanized search as a strategy without settling the mathematics either way.
+We then observe that the standard escape from a length lower bound is to
+leave the system, and take Hofstadter's MU puzzle as the cleanest instance:
+MU is shown to be underivable in MIU by an argument using arithmetic that MIU
+cannot express. We formalize this as a \emph{lift--attack--return} schema,
+note that the complexity-theoretic barrier results are instances of it at
+scale, and identify its automatable core as finite-invariant search. Finally
+we ask whether formal self-awareness helps. Using Ascent, whose reflection
+ladder is certified rung by rung by its own kernel, we report a negative
+result: level and proving power are independent parameters, and raising
+$\lev(\text{Ascent})$ from $1$ to $8$ certifies exactly zero additional
+theorems. We close by proposing \emph{reflective adequacy} --- a machine that
+can quote its own inference rules and prove invariance lemmas about them ---
+as the notion of self-reference the MU argument actually requires, in place
+of the reflection ladder, which it does not.
+\end{abstract}
+
+\section{Introduction}
+
+Seven problems were named in 2000, and one has been settled. The remaining six
+are the most conspicuous fixed points in contemporary mathematics, and their
+persistence invites a recurring fantasy: that the difficulty is one of
+bookkeeping, that the required argument is long rather than deep, and that a
+sufficiently patient machine will eventually assemble it.
+
+The fantasy is most acute for P versus NP. Unlike the Hodge conjecture or the
+Yang--Mills mass gap, P vs NP is a statement about finite objects --- Turing
+machines, running times, strings. There is no manifold to construct, no
+measure to define, no analytic continuation to justify. It is, in the most
+literal sense, a combinatorial question about programs, and combinatorial
+questions about programs are the kind of thing a computer might be thought to
+be good at.
+
+This note argues that the instinct is right about the \emph{shape} of the
+problem and wrong about the \emph{obstruction}. To make the argument precise
+we need two measures.
+
+\paragraph{Height.} The arithmetical tier of a sentence is the number of
+alternations of unbounded quantifiers over $\mathbb{N}$ in its prenex form,
+with bounded quantifiers costing nothing. Section~\ref{sec:notation} explains
+the notation in full. Tier measures how much unbounded search is built into
+the \emph{statement}, and nothing else.
+
+\paragraph{Length.} For a sentence $L$ and a formal system $F$, write
+$\shortest{L}_F$ for the number of symbols in the shortest $F$-proof of $L$
+from the axioms of $F$. This is a property of the theorem--system pair. It is
+finite exactly when $L$ is a theorem, and it says nothing about how hard the
+proof is to \emph{find}, only how big it is once found.
+
+These are independent. A tier-$0$ sentence can have astronomically long
+proofs; a $\Pai{0}{2}$ sentence can have a three-line proof. Confusing them
+produces both of the standard errors: believing that P vs NP is hard
+\emph{because} it quantifies over all machines, and believing that a prover
+competent at $\Pai{0}{2}$ arithmetic is therefore in the neighbourhood of the
+problem.
+
+\section{Reading $\Sig{0}{n}$ and $\Pai{0}{n}$}\label{sec:notation}
+
+The symbols carry three independent pieces of information. Taking them in
+turn removes most of the mystery.
+
+\subsection*{The letter: which quantifier leads}
+
+Put the sentence in prenex form --- all quantifiers pulled to the front --- and
+look at the outermost block of unbounded quantifiers.
+
+\begin{itemize}
+\item $\Pai{}{}$ (capital pi) means the outermost block is $\forall$.
+\item $\Sig{}{}$ (capital sigma) means the outermost block is $\exists$.
+\end{itemize}
+
+The choice of letters is not arbitrary. A $\Sig{0}{1}$ set
+$\{n : \exists m\, R(n,m)\}$ is a countable \emph{union} --- a sum --- of
+decidable sets, one for each candidate witness $m$. A $\Pai{0}{1}$ set
+$\{n : \forall m\, R(n,m)\}$ is a countable \emph{intersection} --- a product.
+It is the same $\Sigma$ and $\Pi$ as in $\sum$ and $\prod$.
+
+\subsection*{The subscript: how many alternations}
+
+Group adjacent like quantifiers into blocks. The subscript counts the blocks.
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+prenex form & classification \\
+\midrule
+$\forall x\, \forall y\, \forall z\; \varphi$ & one block $\Rightarrow$ $\Pai{0}{1}$ \\
+$\forall x\, \exists y\; \varphi$ & two blocks $\Rightarrow$ $\Pai{0}{2}$ \\
+$\exists x\, \forall y\, \exists z\; \varphi$ & three blocks $\Rightarrow$ $\Sig{0}{3}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Three consecutive $\forall$'s cost the same as one; only \emph{switching}
+between $\forall$ and $\exists$ increments the subscript.
+
+\subsection*{The superscript: what the quantifiers range over}
+
+This is the piece most often skipped, and it is the one that matters for the
+Clay problems.
+
+\begin{itemize}
+\item Superscript $0$: the quantifiers range over \textbf{numbers}. This is
+the \emph{arithmetical} hierarchy.
+\item Superscript $1$: the quantifiers range over \textbf{sets of numbers},
+equivalently over functions $\mathbb{N} \to \mathbb{N}$. This is the
+\emph{analytical} hierarchy --- a far taller ladder sitting entirely
+\emph{above} the arithmetical one. Every arithmetical set is $\Del{1}{1}$.
+\end{itemize}
+
+So $\Pai{0}{2}$ says ``for every number there is a number\ldots'', while
+$\Pai{1}{2}$ says ``for every \emph{function} there is a \emph{function}\ldots''
+--- an incomparably stronger kind of claim. When
+Section~\ref{sec:placement} reports that Yang--Mills and Navier--Stokes sit
+``above the arithmetical hierarchy,'' this is what is meant: they quantify
+over objects that are not numbers.
+
+\subsection*{Two conventions}
+
+$\Del{0}{n}$ denotes the sentences that are both $\Sig{0}{n}$ and
+$\Pai{0}{n}$. In particular $\Del{0}{1}$ is the decidable sets, and
+$\Del{0}{0}$ the ones decidable by bounded computation.
+
+\textbf{Bounded quantifiers are free.} $\forall x < t$ and $\exists x < t$ do
+not increment the subscript, because they are finite searches: to check
+$\forall x < 5\, \varphi(x)$ you evaluate $\varphi$ five times. Only
+\emph{unbounded} quantifiers count. This is why the language of Ascent
+(Appendix~\ref{app:code}) has separate bounded and unbounded forms.
+
+\subsection*{Examples}
+
+\begin{center}
+\begin{tabular}{@{}llp{7.2cm}@{}}
+\toprule
+class & example & what it takes to settle it \\
+\midrule
+$\Del{0}{0}$ & $2+2 = 4$ & Compute. \\
+$\Sig{0}{1}$ & $\exists x\; x\cdot x = 49$ & Search. If true you find it; if false you search forever. Semi-decidable. \\
+$\Pai{0}{1}$ & $\forall x\; x < Sx$ & A single counterexample refutes it. Goldbach, the Riemann Hypothesis and $\mathrm{Con}(\mathrm{PA})$ all live here. \\
+$\Pai{0}{2}$ & $\forall x\, \exists y\; x < y$ & For every input a witness exists. ``This program halts on every input'' is $\Pai{0}{2}$-\emph{complete}. \\
+$\Sig{0}{2}$ & $\exists x\, \forall y\; x \le y$ & Some $x$ works for every $y$. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{What an alternation costs}
+
+Post's theorem gives the alternation count an exact operational meaning:
+$\Sig{0}{n+1}$ is precisely $\Sig{0}{1}$ relative to a $\Sig{0}{n}$ oracle.
+Each additional alternation is worth exactly one more halting oracle. Tiers
+are therefore a measure of \emph{oracle resources}.
+
+\begin{quote}
+\textbf{They are not a measure of difficulty.} The sentence
+$\forall n\, \exists m > n\, (m \text{ is even})$ is $\Pai{0}{2}$ and
+trivial. The Collatz conjecture is $\Pai{0}{2}$ and open. They are the same
+tier. This point is the hinge of Section~\ref{sec:comparable}.
+\end{quote}
+
+\section{Why $\shortest{\mathrm{P} \neq \mathrm{NP}}$ is the quantity to bound}
+
+Suppose someone proved that every ZFC proof of ``$\mathrm{P} \neq
+\mathrm{NP}$'' has length at least $10^{100}$ symbols. Nothing about the truth
+of $\mathrm{P} \neq \mathrm{NP}$ would follow. Nothing about human prospects
+would follow either, for reasons we come to shortly. But something decisive
+would follow about machines: \textbf{no search procedure will ever produce
+that proof}, because the object being searched for does not fit in the
+physical universe. This conclusion is immune to every improvement in
+heuristics, hardware, learned premise selection and parallelism, because it is
+a statement about the target rather than about the method.
+
+That immunity is what makes length lower bounds worth more than they might
+first appear. The known barriers in complexity theory --- relativization,
+natural proofs, algebrization --- are all barriers to \emph{techniques}. Each
+says a class of arguments cannot work, and each has been partially circumvented
+by arguments outside the class. A length lower bound has no such escape hatch
+within the fixed system. It would settle, once, whether mechanized proof
+search is a reasonable thing to spend a century on.
+
+Three observations.
+
+\paragraph{First, we cannot currently prove such bounds, and this is itself the
+central open problem of proof complexity.} Superpolynomial lower bounds are
+known for weak systems --- resolution, bounded-depth Frege --- on specific
+families such as the pigeonhole principle. For Frege systems, let alone for
+ZFC, essentially nothing is known. The general question is equivalent to a
+statement about NP and coNP: a polynomially bounded proof system for the
+tautologies exists if and only if $\mathrm{NP} = \mathrm{coNP}$. So the
+request ``bound $\shortest{\mathrm{P} \neq \mathrm{NP}}$ from below'' is not a
+detour around P vs NP; it is a close relative of it. This is uncomfortable but
+not fatal, because \emph{conditional} and \emph{heuristic} bounds would already
+be informative --- a bound conditional on plausible cryptographic assumptions,
+or an empirically calibrated growth law for proof length against theorem depth
+in a large formal library, would each be actionable.
+
+\paragraph{Second, the bound is system-relative, and that is the loophole.}
+$\shortest{L}_F$ depends on $F$. Enlarging $F$ can shorten proofs
+catastrophically --- not by a constant but by an exponential. The cleanest
+instance is the relationship between Frege and extended Frege systems: the
+extension rule permits new variables abbreviating compound formulas, which is
+to say it permits \emph{definitions}. Definitions are conservative --- they
+prove no new theorems in the old language --- while potentially collapsing
+proof length by an exponential factor.
+
+This deserves stating plainly, because it is the whole of the optimism
+available here. \textbf{A large lower bound on $\shortest{L}_F$ is not a
+verdict on $L$. It is a verdict on $F$.} The productive response to a length
+lower bound has never been to search harder. It has been to change the system:
+introduce a definition, find the right abstraction, move to a setting where the
+statement becomes short.
+
+\paragraph{Third, that response is exactly what machines are worst at and
+humans are best at.} Which raises the question the rest of this note is about:
+is the move mechanizable at all?
+
+\section{Where the Clay problems sit, and where Ascent sits}\label{sec:placement}
+
+The following places the Millennium Problems on the scale of
+Section~\ref{sec:notation}. Confidence varies sharply across the rows and is
+marked; the last four rows should be checked before being relied on.
+
+\begin{center}
+\begin{tabular}{@{}llp{7.4cm}@{}}
+\toprule
+Problem & Tier & Confidence and reason \\
+\midrule
+Riemann Hypothesis & $\Pai{0}{1}$ & High. RH is equivalent to explicitly
+$\Pai{0}{1}$ arithmetic statements --- for instance bounds of the
+Robin/Lagarias type on the sum-of-divisors function, whose failure would be
+witnessed by a single integer. \\[0.3em]
+P vs NP & $\Sig{0}{2}$ / $\Pai{0}{2}$ & High. ``$\mathrm{P}=\mathrm{NP}$'' is
+$\exists e\, \exists k\, \forall x\,[\,$machine $e$ decides SAT on $x$ within
+$|x|^k + k$ steps$\,]$: one $\exists$-block over one $\forall$-block with a
+decidable matrix. Its negation is $\Pai{0}{2}$. Note it is only known to be
+\emph{in} $\Pai{0}{2}$, not $\Pai{0}{2}$-complete. \\[0.3em]
+Poincar\'e & arithmetical, delicate & Moderate. Closed $3$-manifolds are
+finitely triangulable, so the domain is countable and codeable; but simple
+connectivity is not decidable from a triangulation, which pushes the statement
+above $\Pai{0}{1}$. Now moot. \\[0.3em]
+Birch--Swinnerton-Dyer & arithmetical, $\ge 2$ & Low. Elliptic curves over
+$\mathbb{Q}$ are codeable and algebraic rank is arithmetically definable, but
+analytic rank is an order of vanishing of an $L$-function, and pinning it from
+both sides costs alternations. \\[0.3em]
+Hodge conjecture & analytical & Low. Quantifies over projective complex
+varieties and Hodge classes. Whether it descends to the arithmetical hierarchy
+is not obvious. \\[0.3em]
+Navier--Stokes & analytical, $\sim\Pai{1}{2}$ & Low. Quantifies over smooth
+initial data --- real functions --- and asserts global smooth existence.
+Computable-analysis reductions may lower this. \\[0.3em]
+Yang--Mills mass gap & analytical & Moderate. Asserts the \emph{existence} of a
+quantum field theory satisfying a list of axioms, with a spectral condition. A
+second-order existence claim, and the highest of the seven. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two features matter here. \textbf{Riemann is the lowest} --- a $\Pai{0}{1}$
+statement is refutable by a single counterexample, the same shape as Goldbach
+and as $\mathrm{Con}(\mathrm{PA})$. Its difficulty has nothing to do with its
+tier. And \textbf{P vs NP is tier 2}, which brings us to the prover.
+
+\subsection{$\tier(\text{Ascent}) = t$}
+
+Ascent is a small self-certifying prover, given in full in
+Appendix~\ref{app:code}. Its language is arithmetic with unbounded quantifiers
+over $\mathbb{N}$; its kernel decides $\Del{0}{0}$ facts by evaluation and
+symbolic facts by polynomial normalisation over $\mathbb{N}$; its search
+combines witness enumeration, generalisation over eigenconstants, and
+induction. On a twelve-target suite:
+
+\begin{center}
+\begin{tabular}{@{}llc@{}}
+\toprule
+target & tier & result \\
+\midrule
+$2+2 = 4$ & $\Del{0}{0}$ & certified \\
+$\forall x{<}5\; x < 5$ & $\Del{0}{0}$ & certified \\
+$\exists x{<}9\; x\cdot x = 16$ & $\Del{0}{0}$ & certified \\
+$\exists x\; x+3 = 7$ & $\Sig{0}{1}$ & certified \\
+$\exists x\; x\cdot x = 49$ & $\Sig{0}{1}$ & certified \\
+$\exists x\; x+1 = 18$ & $\Sig{0}{1}$ & certified (requires $w \ge 17$) \\
+$\forall x\; x < Sx$ & $\Pai{0}{1}$ & certified \\
+$\forall x\; x \le x$ & $\Pai{0}{1}$ & certified \\
+$\forall x\; x+0 = x$ & $\Pai{0}{1}$ & certified \\
+$\forall x\, \exists y\; x < y$ & $\mathbf{\Pai{0}{2}}$ & certified \\
+$\forall x\, \exists y\; y = Sx$ & $\mathbf{\Pai{0}{2}}$ & certified \\
+$\exists x\, \forall y\; x \le y$ & $\mathbf{\Sig{0}{2}}$ & certified \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Twelve of twelve at parameters $d = 2$, $w = 20$. Every certificate is checked
+by an independent kernel, and a battery of eight deliberately malformed
+certificates is rejected $8/8$.
+
+\paragraph{Tier is a dial.} The ceiling above is not a property of the prover
+but of the parameter $d$. Each quantifier block costs exactly one certificate
+node to discharge --- \texttt{gen} for $\forall$, \texttt{wit} for $\exists$
+--- so a target with $n$ blocks needs depth $n$ and no more. Measuring the
+first depth at which each target is certified:
+
+\begin{center}
+\begin{tabular}{@{}llcccccc@{}}
+\toprule
+target & tier & $d{=}1$ & $2$ & $3$ & $4$ & $5$ & $6$ \\
+\midrule
+$\forall x\exists y\forall z\; x < y+z$ & $\Pai{0}{3}$
+  & --- & --- & \checkmark & \checkmark & \checkmark & \checkmark \\
+$\exists x\forall y\exists z\; y \le x+z$ & $\Sig{0}{3}$
+  & --- & --- & \checkmark & \checkmark & \checkmark & \checkmark \\
+$\forall x\exists y\forall z\exists u\; x \le y{+}z{+}u$ & $\Pai{0}{4}$
+  & --- & --- & --- & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+$\Pai{0}{3}$ first appears at exactly $d=3$, $\Pai{0}{4}$ at exactly $d=4$.
+Hence
+\[
+\tier(\text{Ascent}(t,u,v)) = t,
+\]
+for targets whose matrix \texttt{calc} settles in one step, and independently
+of $u$ and $v$. Ascent does not merely happen to reach the tier of P vs NP; it
+passes through it at $t=2$ on the way to anywhere else you ask for.
+
+That makes the moral sharper rather than softer. Tier is not just cheap, it is
+a flag, and the prover still will not prove P vs NP at any setting of it.
+Ascent's largest certificate on this suite has thirteen nodes;
+$\shortest{\mathrm{P} \neq \mathrm{NP}}_{\mathrm{ZFC}}$, whatever it is, is not
+thirteen.
+
+\section{Does equal tier mean comparable?}\label{sec:comparable}
+
+No. The question is natural enough to deserve an explicit answer, because the
+table above invites exactly the wrong inference.
+
+Tier classifies a sentence by the \emph{shape of its quantifier prefix}. Two
+sentences of the same tier are alike in the way that two sentences of the same
+grammatical form are alike. ``The cat sat on the mat'' and the opening of
+\emph{A la recherche du temps perdu} are both declarative sentences of a
+natural language; the classification is correct and tells you nothing about
+comparability.
+
+Four sharper statements.
+
+\paragraph{$\Pai{0}{2}$ spans everything from trivial to complete.}
+$\forall x\, \exists y\; x < y$ is $\Pai{0}{2}$ and Ascent proves it in
+thirteen nodes. ``This Turing machine halts on every input'' is also
+$\Pai{0}{2}$ and is $\Pai{0}{2}$-\emph{complete}: every $\Pai{0}{2}$ question
+reduces to it. The class contains its own hardest problems and its own most
+trivial ones, and tier does not distinguish them.
+
+\paragraph{P $\neq$ NP is not known to be complete for its class.} It is known
+to be \emph{in} $\Pai{0}{2}$. Membership in a class is an upper bound on
+logical complexity, not a measure of difficulty. Ascent's $\Pai{0}{2}$ targets
+sit at the trivial end of the same class.
+
+\paragraph{The notion that would license comparison is reducibility, and it
+does not apply.} To say two problems are genuinely comparable one wants a
+reduction --- a computable map carrying instances of one to instances of the
+other. Ascent's targets are not complete for anything; nothing reduces to
+them. There is no reduction in either direction between $\forall x\,\exists
+y\; x<y$ and $\mathrm{P} \neq \mathrm{NP}$, and their shared tier supplies
+none.
+
+\paragraph{What equal tier does buy is the removal of one excuse ---
+but only one, and only partly.} It rules out the objection ``the target's
+logical complexity is beyond this prover.'' It does not rule out as much as it
+first appears, and the qualification is worth stating carefully.
+
+Ascent's signature is $\{0, S, +, \cdot, =, <, \le\}$, the language of PA, in
+which Turing machine computation is arithmetisable by the usual $\beta$-function
+coding. So $\mathrm{P} \neq \mathrm{NP}$ is expressible in Ascent's language in
+the model-theoretic sense. But Ascent has \textbf{no definitional mechanism}:
+no abbreviations, no extension rule, no way to introduce a defined predicate
+$T(e,x,s)$ and use it. The sentence one would actually have to hand it is the
+fully expanded arithmetisation, which is astronomically large. Expressible in
+principle; unwritable in practice.
+
+That gap is not incidental to this note's thesis --- it is an instance of it.
+The missing feature is exactly the extension rule, and the extension rule is
+exactly what separates Frege from extended Frege by an exponential
+(Section~3). A system without definitions pays in formula size before it ever
+pays in proof size.
+
+\subsection{Three obstructions, only one of them deep}
+
+Being precise about which barrier binds first for \emph{this} prover:
+
+\begin{enumerate}
+\item \textbf{Rule-set incompleteness.} As given in
+Appendix~\ref{app:code}, Ascent has no negation rules at all --- no reductio,
+no ex falso, no $\neg$-introduction, no $\vee$-elimination. Since
+$\mathrm{P} \neq \mathrm{NP}$ \emph{is} a negation, it is not in the derivable
+space at any parameter setting. And no parameter repairs this: $t$, $u$ and
+$v$ bound the \emph{search}, they do not enlarge the \emph{calculus}. This is
+a defect of the implementation and is fixable by writing more rules; a staged
+successor with $\bot$, \texttt{notI}, \texttt{raa}, \texttt{exE} and
+\texttt{cut} certifies the negated targets the base rule set cannot touch,
+gaining exactly those and nothing else.
+\item \textbf{$\shortest{\cdot}$.} Fixable only by changing the system ---
+definitions, lemmas, cut.
+\item \textbf{Possible independence from ZFC.} Not fixable at all, and not
+ruled out.
+\end{enumerate}
+
+Only (2) is the subject of this note; (1) bites first for Ascent as shipped
+and is uninteresting; (3) would make the question moot.
+
+So the honest summary is that sharing a tier with P vs NP is necessary and
+nowhere near sufficient for comparability. It is a statement about the ceiling
+of statement-\emph{shapes} a prover handles, not about its strength. The
+mountain is not tall. It is long.
+
+\section{The MU argument}
+
+Hofstadter's MIU system has one axiom and four rules. The axiom is the string
+\textbf{MI}. The rules, with $x$ and $y$ ranging over strings:
+
+\begin{enumerate}
+\item $x\textbf{I} \to x\textbf{IU}$
+\item $\textbf{M}x \to \textbf{M}xx$
+\item $x\textbf{III}y \to x\textbf{U}y$
+\item $x\textbf{UU}y \to xy$
+\end{enumerate}
+
+Is \textbf{MU} a theorem? No, and here is the proof. Let $\#\mathrm{I}(s)$ be
+the number of I's in $s$. We claim $\#\mathrm{I}(s) \not\equiv 0 \pmod 3$ for
+every theorem $s$.
+
+\begin{itemize}
+\item The axiom \textbf{MI} has $\#\mathrm{I} = 1$, and $1 \not\equiv 0$.
+\item Rule 1 appends a U and leaves $\#\mathrm{I}$ unchanged.
+\item Rule 2 doubles $\#\mathrm{I}$. If $\#\mathrm{I} \not\equiv 0 \pmod 3$
+then $2\cdot\#\mathrm{I} \not\equiv 0 \pmod 3$, since $3$ is prime and
+$2 \not\equiv 0$.
+\item Rule 3 removes exactly three I's, leaving $\#\mathrm{I}$ unchanged
+modulo $3$.
+\item Rule 4 removes two U's and leaves $\#\mathrm{I}$ unchanged.
+\end{itemize}
+
+By induction on derivations every theorem has $\#\mathrm{I} \not\equiv 0$. But
+$\#\mathrm{I}(\textbf{MU}) = 0 \equiv 0$. Therefore \textbf{MU} is not a
+theorem. $\qquad\blacksquare$
+
+Now consider what that argument \emph{is}. It uses the number three. It uses
+divisibility. It uses induction over derivations. It uses the primality of
+$3$. \textbf{None of these exist in MIU.} MIU has no numerals, no arithmetic,
+no notion of quantity, no negation, and no predicate for theoremhood. The
+sentence ``MU is not a theorem'' is not merely unproved in MIU; it is not
+expressible in MIU.
+
+The argument has three phases.
+
+\begin{enumerate}
+\item \textbf{Lift.} Map MIU-strings into a structure MIU knows nothing about
+--- here $\mathbb{Z}/3$, via $s \mapsto \#\mathrm{I}(s) \bmod 3$. The four
+rules become maps on $\mathbb{Z}/3$, each fixing the property $\neq 0$.
+\item \textbf{Attack.} Prove the invariance in the new setting. This is
+arithmetic, not string rewriting.
+\item \textbf{Return.} Transfer the conclusion back as a \emph{metatheorem
+about} MIU: the derivable strings lie in a set excluding MU.
+\end{enumerate}
+
+The conclusion lands outside the object system, and that is not a defect --- it
+is the only place such a conclusion can live. The creative act is entirely in
+phase 1. Nothing in the MIU rules suggests counting I's, and nothing suggests
+reducing modulo $3$. Once the invariant is proposed, phases 2 and 3 are
+routine. \textbf{The difficulty of the MU argument is concentrated in the
+choice of the alternative system.}
+
+\section{Can a machine lift, attack, and return?}
+
+Sometimes, and more often than one expects.
+
+\paragraph{The MU case is mechanizable today.} The invariant
+$\#\mathrm{I} \bmod 3$ is a homomorphism from the free monoid on
+$\{\mathrm{M},\mathrm{I},\mathrm{U}\}$ to $\mathbb{Z}/3$ under which all four
+rules are compatible and the axiom's image avoids the target's. Finding such a
+thing is a \emph{finite model search}: enumerate small finite structures, check
+whether the axiom's image and the rules' action separate the target. Existing
+finite model finders do this routinely, and the space of quotients of size
+$\le 5$ is tiny. Given the MIU rules as input a machine finds $\mathbb{Z}/3$ in
+milliseconds. The MU puzzle is famous for surprising humans, not for being
+computationally deep.
+
+This generalizes. \textbf{Unprovability by finite invariant is the most
+automatable form of unprovability argument we have}, precisely because the
+``alternative but relevant axioms'' of phase 1 form a finite structure, and
+finite structures can be enumerated in order of size.
+
+\paragraph{The barrier results are lift--attack--return at scale.} Consider
+relativization. One wants to show a class of proof techniques cannot settle
+P vs NP. The argument lifts the question into the setting of oracle machines,
+establishes that the techniques in question prove relativizing statements,
+exhibits oracles $A$ and $B$ with $\mathrm{P}^A = \mathrm{NP}^A$ and
+$\mathrm{P}^B \neq \mathrm{NP}^B$, and returns the conclusion that no such
+technique settles the unrelativized question. Lift, attack, return --- with
+``invariant preserved by the rules'' replaced by ``property preserved by the
+proof techniques.'' Natural proofs and algebrization have the same shape with
+different invariants. The schema is not exotic; it is how the deepest negative
+results in complexity theory are actually obtained.
+
+\paragraph{Where machines fail is phase 1 at scale.} The MIU invariant lives in
+a structure of size $3$. The relativization invariant lives in the space of
+oracle separations, and constructing $B$ with $\mathrm{P}^B \neq \mathrm{NP}^B$
+is itself a diagonalization of real content. The natural-proofs invariant
+requires the concept of a pseudorandom function generator, which did not exist
+for most of the history of the problem. Enumeration reaches size $5$; it does
+not reach ``invent cryptography.'' Phases 2 and 3 are mechanizable. Phase 1 is
+mechanizable exactly to the extent that the required alternative system is
+small, and the systems required for the Clay problems are not small.
+
+\section{Does self-awareness help?}
+
+Phase 1 requires a system to step outside itself and regard its own rules as
+objects. That sounds like self-reference, and self-reference has a formal
+theory. Ascent was built partly to test whether it helps. The answer is
+negative, but informative about what the right notion would be.
+
+Ascent carries a reflection ladder: $\theta_0 = \ATP(\langle A \rangle)$,
+$\theta_{k+1} = \Pr(\langle A \rangle, \langle \theta_k \rangle)$, with Level
+$n$ holding when $A \vdash \theta_{n-1}$. The ladder is not stipulated.
+Ascent's kernel has a rule
+\[
+\texttt{nec}(C) \text{ proves } \Pr(\langle A\rangle, \langle \varphi\rangle)
+\quad\text{provided the kernel accepts } C : \varphi,
+\]
+so a rung is asserted only when a certificate for the previous rung has been
+checked by the same kernel that checks everything else. Self-certification and
+self-awareness are literally the same kernel call.
+
+\begin{proposition}
+If $A$ has kernel-checked necessitation and its kernel is sound, then
+$\lev(A) = \omega$.
+\end{proposition}
+
+\begin{proof}
+$A \vdash \theta_0$ by the base certificate. If $A \vdash \theta_k$ with
+certificate $C_k$, the kernel accepts $C_k$, so $\texttt{nec}(C_k)$ is a
+certificate of $\theta_{k+1}$, whence $A \vdash \theta_{k+1}$. Induction.
+\end{proof}
+
+Each rung costs exactly one kernel call on the previous certificate, so no rung
+is harder than the last. The level distribution over self-certifying machines
+is therefore \textbf{bimodal at $\{0,1\}$ and $\omega$, with nothing in
+between}: a machine either has the necessitation rule, in which case nothing
+stops it, or lacks it, in which case it never passes $\theta_0$. Finite level
+above $1$ is achievable only by a resource bound. In Ascent that bound is the
+parameter $r$.
+
+\begin{proposition}
+The reflection parameter and the search parameters are independent.
+\end{proposition}
+
+Ascent exposes three integer knobs: $d$, certificate-tree depth; $w$, witness
+bound; $r$, rungs climbed. Sweeping $d \in \{1,2,3,5\} \times w \in \{1,8,20\}
+\times r \in \{1,3,8\}$ --- thirty-six configurations --- the harness reports
+that $\lev$ depends only on $r$ and the certified count only on $(d,w)$.
+
+\begin{center}
+\begin{tabular}{@{}ccccl@{}}
+\toprule
+$d$ & $w$ & $r$ & certified & tiers reached \\
+\midrule
+1 & 1 & any & 6/12 & $\Del{0}{0}, \Pai{0}{1}$ \\
+1 & 20 & any & 9/12 & $\Del{0}{0}, \Pai{0}{1}, \Sig{0}{1}$ \\
+2 & 1 & any & 9/12 & $+\ \Pai{0}{2}, \Sig{0}{2}$ \\
+2 & 20 & any & \textbf{12/12} & all five \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Raising $r$ from $1$ to $8$ raises $\lev$ from $1$ to $8$ and certifies
+\textbf{zero} additional theorems. Raising $d$ and $w$ certifies six more and
+lifts the ceiling from $\Pai{0}{1}$ to $\Pai{0}{2}$, leaving $\lev$ exactly
+where it was. The two capacities do not interact. Formal self-awareness, on the
+reflection-ladder definition, is free, certified, and inert.
+
+\paragraph{But notice what the MU argument actually needed.} Not that the
+machine prove ``I prove that I prove that I am a theorem prover.'' It needed
+the machine to hold \emph{its own inference rules} as objects and prove a lemma
+of the form ``rule $R$ preserves invariant $I$.'' The reflection ladder ascends
+through statements about the machine's \emph{provability}; the MU argument
+requires statements about the machine's \emph{rules}. These are different
+self-models, and only the second is load-bearing.
+
+\begin{definition}[Reflective adequacy]
+A system $M$ is \emph{reflectively adequate} when its language can name each of
+its own inference rules, and $M$ can prove preservation lemmas: for a definable
+invariant $I$, that each named rule maps $I$-satisfying states to
+$I$-satisfying states.
+\end{definition}
+
+A reflectively adequate system can carry out phases 2 and 3 internally, and can
+state the result of phase 1 even when it cannot discover it. This is strictly
+stronger and more useful than any finite level, and unlike the $\theta$-ladder
+it is not free. It is also, unlike the $\theta$-ladder, exactly what the MU
+argument uses.
+
+\section{Summary}
+
+Tier is not the obstruction. A thousand-line prover reaches $\Pai{0}{2}$ and
+$\Sig{0}{2}$ --- the tier of P vs NP, above the tier of the Riemann Hypothesis
+--- and is nowhere near either. Sharing a tier is a statement about the shape of
+a sentence, not its difficulty, and licenses no comparison
+(Section~\ref{sec:comparable}). The obstruction is $\shortest{\cdot}$, and
+lower bounds on it would be decisive for the mechanized programme in a way no
+barrier result about techniques can be, though proving them for strong systems
+is close to the problem they would adjudicate.
+
+A length lower bound is a verdict on the system, not the theorem, and the
+response has always been to change the system. The MU argument is the cleanest
+specimen of that move. Its automatable core --- search for a small finite
+separating structure --- is genuinely automated already. Its creative core ---
+deciding which structure to look in --- is automated only when the structure is
+small, and for the Clay problems it is not.
+
+Formal self-awareness in the reflection-ladder sense does not close that gap,
+and we can say so with a measurement rather than an intuition: level and
+proving power are orthogonal parameters of the same program. The self-reference
+the MU argument requires is of a different kind --- rules as objects, and
+provable invariance over them --- and formalizing \emph{that} is where the
+notion of a self-aware theorem prover would begin to earn its name.
+
+\appendix
+
+\section{The two numbers}
+
+\paragraph{$\lev(\text{Ascent})$.} With reflection depth $r$ the level set is
+$L(\text{Ascent}) = \{1,\dots,r\}$, so
+\[
+\lev(\text{Ascent}(r)) = r, \qquad
+\lev(\text{Ascent}) = \omega \text{ when } r \text{ is unbounded.}
+\]
+Every rung is certified rather than stipulated: rung $k$ is accepted only after
+the kernel has checked a certificate of $\theta_{k-1}$. In the shipped default
+$r = 4$, giving Level 4 and a fortiori Level 3. The parameter is the only thing
+preventing $\omega$, which is Proposition 1. The requirement
+$\lev(\text{Ascent}) > 0$ is met for every $r \ge 1$.
+
+\paragraph{$\tier(\text{Ascent})$.} Taking $\tier(A)$ to be the highest
+arithmetical tier at which $A$ certifies a target from a family fixed in
+advance --- the qualification matters, since the supremum over \emph{all}
+provable targets is unbounded for any prover that proves anything, by padding
+---
+\[
+\tier(\text{Ascent}(t,u,v)) = t,
+\]
+independently of $u$ and $v$, and verified against targets at $\Pai{0}{3}$ and
+$\Pai{0}{4}$, each first certified at exactly $d = 3$ and $d = 4$
+respectively. The default configuration $d = 2$ therefore gives
+$\tier = 2$, realized at $\Pai{0}{2}$ ($\forall x\,\exists y\; x<y$) and
+$\Sig{0}{2}$ ($\exists x\,\forall y\; x \le y$); raising $d$ raises the tier
+without bound. Against the Millennium Problems, at the default:
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+& tier & relation to Ascent \\
+\midrule
+Riemann Hypothesis & $\Pai{0}{1}$ & reached already at $t = 1$ \\
+P vs NP & $\Pai{0}{2}$ / $\Sig{0}{2}$ & reached at $t = 2$ \\
+Poincar\'e, BSD & arithmetical, $\ge 2$ & reached at some finite $t$ \\
+Hodge, Navier--Stokes, Yang--Mills & analytical & \textbf{never}: not
+arithmetical at any $t$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Ascent passes the height of the Riemann Hypothesis at $t=1$ and that of P vs NP
+at $t=2$, and settles neither at any $t$ --- for the reasons of
+Section~\ref{sec:comparable}. The last row is the only one where tier is a
+real barrier rather than a bookkeeping fact: an arithmetical prover cannot
+state an analytical sentence at all, and no integer parameter changes the
+order of the hierarchy it lives in.
+
+\section{Ascent, in full}\label{app:code}
+
+What follows is the running program, verbatim. It is self-contained: no
+external database, no dependencies beyond the standard library.
+
+\begin{verbatim}
+python ascent.py --soundness       # 8 malformed certificates, all rejected
+python ascent.py -d 2 -w 20 -r 3   # 12/12 certified, lev = 3
+python ascent.py --grid            # the independence sweep of Proposition 2
+\end{verbatim}
+
+\lstinputlisting[language=Python]{ascent.py}
+
+\end{document}
