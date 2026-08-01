@@ -1,0 +1,255 @@
+\documentclass[11pt]{article}
+
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs}
+\usepackage[hidelinks]{hyperref}
+
+\title{Section 8 and Predator 8.002:\\
+From Counting Bounds to ML-Guided Proof Search}
+\author{Brian Tenneson}
+\date{August 1, 2026}
+
+\newcommand{\prcom}{\texttt{prcom}}
+
+\begin{document}
+
+\maketitle
+
+\section{The connection}
+
+Section 8 of \emph{Depths of a Simulation}, Version 45, bounds the
+number of possible length-$n$ proof sequences.  In its notation,
+
+\begin{equation}
+P_F(\Gamma,\varphi,n)
+\leq
+\prod_{j=1}^{n}
+\left(
+|\Gamma|+\sum_{k=1}^{a}\kappa_k(j-1)^k
+\right).
+\label{eq:section8-bound}
+\end{equation}
+
+Here $\kappa_k$ is the number of $k$-ary rules, $a$ is the maximum
+rule arity, and $P_F(\Gamma,\varphi,n)$ is the number of proofs of
+$\varphi$ from $\Gamma$ having length exactly $n$.  The theorem is
+deliberately a crude cardinal upper bound: it counts many locally
+describable line-construction sequences that are not genuine proofs,
+as well as redundant constructions and constructions irrelevant to
+the target.
+
+Predator 8.002 provides an experimental realization of the structural
+observation following this theorem.  Proofs are not structureless
+passwords.  They contain reusable lemmas, legal intermediate states,
+search-order information, and branching structure.  Machine learning
+can exploit that structure without changing the formal rules or the
+set of legal proofs.
+
+\section{A schema-level illustration for \prcom}
+
+In the frozen Metamath environment used by Predator, the portion of
+the database strictly before \prcom{} contains the following data:
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Quantity & Value \\
+\midrule
+Earlier assertion schemas & 4,696 \\
+Maximum raw mandatory-hypothesis arity & 41 \\
+Floating hypotheses of \prcom & 2 \\
+Labels in the generated Metamath certificate & 28 \\
+Principal logical assertion applications & 4 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The four principal logical applications in the certificate are
+
+\[
+\texttt{uncom},\qquad
+\texttt{df-pr},\qquad
+\texttt{df-pr},\qquad
+\texttt{3eqtr4i}.
+\]
+
+Under a finite schema-level interpretation of
+Equation~\eqref{eq:section8-bound}, with the 41 zero-arity schemas
+absorbed into the initial resources, the crude 28-line upper bound is
+approximately
+
+\begin{equation}
+P_F(\Gamma,\prcom,28)
+\lesssim 1.69\times 10^{1167}.
+\label{eq:raw-proxy}
+\end{equation}
+
+This number is not an estimate of the actual number of proofs of
+\prcom, and it is not the number of states that Predator must search.
+It illustrates the scale of the combinatorial possibility space
+described by the Section 8 bound.
+
+At the logical-only level, there are 4,643 earlier logical assertion
+schemas.  Treating the 2,157 assertions with no essential hypotheses
+as base options produces an analogous four-logical-application proxy
+of approximately
+
+\begin{equation}
+5.1\times 10^{19}.
+\label{eq:logical-proxy}
+\end{equation}
+
+Equation~\eqref{eq:logical-proxy} is again an illustrative schema-level
+bound, not an exact target-specific proof count.  Metamath assertions
+are schematic and admit substitutions, while Equation
+\eqref{eq:section8-bound} is stated for finitary partial-function
+rules.  A completely literal translation would therefore need to
+make the treatment of substitutions and instantiated rules explicit.
+
+\section{From counting to learned search measures}
+
+Section 8 concerns how many proof sequences may exist.  Predator
+places a learned, nonuniform ordering over legal proof-search moves.
+Conceptually, if $s_\theta(a\mid S)$ is the learned score assigned to
+a legal assertion application $a$ in proof state $S$, a temperature
+parameter $T$ induces a distribution of the form
+
+\begin{equation}
+p_{\theta,T}(a\mid S)
+=
+\frac{\exp\!\left(s_\theta(a\mid S)/T\right)}
+{\displaystyle\sum_{b\in A(S)}
+ \exp\!\left(s_\theta(b\mid S)/T\right)},
+\label{eq:policy}
+\end{equation}
+
+where $A(S)$ is the set of legal applications in $S$.  This is an
+idealized description of the implemented combination of learned
+scores, seeded stochastic ordering, novelty, rarity, and
+counterfactual exploration.  A complete proof path
+$\pi=(a_1,\ldots,a_n)$ then receives an idealized path probability
+
+\begin{equation}
+p_{\theta,T}(\pi)
+=
+\prod_{j=1}^{n}p_{\theta,T}(a_j\mid S_j).
+\label{eq:path-probability}
+\end{equation}
+
+Thus Section 8 supplies a counting measure on the space of possible
+proof constructions, while Predator supplies a learned search measure
+on the legal part of that space.  Machine learning does not remove
+legal proofs or create new inference rules.  It reallocates finite
+search attention.
+
+The creativity controls regulate how concentrated this attention is.
+Low temperature concentrates probability around highly ranked moves;
+higher temperature and counterfactual selection preserve some search
+mass for lower-ranked legal alternatives.  The Metamath verifier is
+independent of both mechanisms and remains the final authority on
+whether the selected path is a proof.
+
+\section{The controlled \prcom{} result}
+
+After parsing and unification, Predator found 150 legal assertion
+applications at the root of \prcom.  The useful equality-chaining
+assertion \texttt{3eqtr4i} behaved as follows:
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+Measurement & Result \\
+\midrule
+Unguided diagnostic rank of \texttt{3eqtr4i} & 134 of 150 \\
+ML-guided raw rank of \texttt{3eqtr4i} & 64 of 150 \\
+Approximate ordinary explorer capacity & 60 \\
+Guided first verified proof & 2,633 expansions \\
+Unguided result at the common cutoff & no proof in 5,000 expansions \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The ML score moved \texttt{3eqtr4i} close to the ordinary explorer
+cutoff.  Counterfactual creativity then admitted the slightly
+out-of-cap candidate, after which the formal search completed all
+subgoals and emitted a certificate.
+
+Let $E_M(\varphi)$ denote the number of search-state expansions before
+prover $M$ first discovers a verified proof of $\varphi$, with
+$E_M(\varphi)=\infty$ if it never does.  The experiment established
+
+\[
+E_{\mathrm{ML}}(\prcom)=2633
+\qquad\text{and}\qquad
+E_{\mathrm{unguided}}(\prcom)>5000.
+\]
+
+Consequently, the censored fixed-instance search-effort ratio satisfies
+
+\begin{equation}
+\frac{E_{\mathrm{unguided}}(\prcom)}
+     {E_{\mathrm{ML}}(\prcom)}
+>
+\frac{5000}{2633}
+\approx 1.90.
+\label{eq:fixed-separation}
+\end{equation}
+
+The true ratio is unknown because the unguided condition did not find
+a proof before its stopping rule.
+
+The expansion count in Equation~\eqref{eq:fixed-separation} is not the
+same quantity as the proof length $n$ in Equation
+\eqref{eq:section8-bound}.  Proof length measures the size of a
+certificate or derivation under a declared convention.  Predator's
+budget counts search-state expansions performed while trying to find
+such a derivation.  The distinction is essential: ML reduced discovery
+effort, not the formal length or logical validity conditions of the
+certificate.
+
+\section{Interpretation}
+
+The relationship can be summarized as follows:
+
+\begin{center}
+\begin{tabular}{@{}p{0.28\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Component & Function \\
+\midrule
+Section 8 bound & Bounds the cardinal size of proof-construction space \\
+Parsing and unification & Remove syntactically or formally illegal applications \\
+ML policy & Prioritizes structurally promising legal applications \\
+Creativity controls & Preserve alternatives when learned ranking is imperfect \\
+Metamath verifier & Certifies the complete selected derivation \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Predator 8.002 did not lower the Section 8 upper bound and did not
+change which proofs were legal.  It concentrated a finite expansion
+budget on a smaller and more productive portion of the legal search
+space.  The experiment is therefore a concrete finite-instance
+demonstration of Section 8's concluding principle: search procedures
+can be compared mathematically and experimentally by how quickly they
+reach certified solutions.
+
+It is not yet an asymptotic speedup theorem.  Such a theorem would
+require a family of targets, a scaling parameter, and proved upper and
+lower bounds for the competing procedures.  The \prcom{} result is a
+controlled proof of concept showing that the proposed mechanism can
+produce a genuine search-effort separation while formal soundness
+remains unchanged.
+
+For the HaloProof benchmark, the same framework suggests the relevant
+question.  Its formal proof space may be enormous, but learned guidance
+could concentrate search mass around productive constructions, while
+controlled creativity prevents an imperfect model from assigning
+effectively zero attention to the necessary route.  The benchmark will
+test whether this finite-instance mechanism transfers to a longer and
+substantially more difficult derivation.
+
+\end{document}
