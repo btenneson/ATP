@@ -1,0 +1,175 @@
+Formal Self-Awareness in a Hurry.
+
+This is a quick guided tour of Sections fifteen point three through fifteen point six:
+internal provability, the reflection sequence, Level n, and the reason higher levels do not automatically include the lower ones.
+
+Let us start with the big question.
+
+How can an automated theorem prover say something about its own proving?
+
+Not whether it is conscious. That is not the claim.
+The question is narrower, and mathematical:
+can the machine have a formal name for itself, and prove statements about that name?
+
+Section fifteen point three introduces the internal provability predicate.
+
+Think of it as a piece of the machine's language meaning:
+the machine with this name proves the formula with that name.
+
+So the machine can express a sentence like:
+I prove the formula saying that I am an automated theorem prover.
+
+There is an important warning here.
+
+The symbol for provability is introduced with an intended meaning.
+It is not automatically the full Gödel-style provability predicate from arithmetic.
+The paper does not yet assume numerical encodings of proofs.
+And it does not assume the usual derivability conditions from provability logic.
+
+More importantly, a machine can make a claim about its own proving without that claim being correct.
+
+It might prove:
+I prove statement A.
+
+And yet fail to prove statement A itself.
+
+The reverse mismatch is also possible.
+It may prove A, while failing to prove the sentence saying that it proves A.
+
+So actual proving, and proved claims about proving, are two different things.
+
+Section fifteen point four builds the reflection sequence.
+
+The first formula, theta zero, says:
+I am an automated theorem prover.
+
+Theta one says:
+I prove theta zero.
+
+In ordinary language:
+I prove that I am an automated theorem prover.
+
+Theta two says:
+I prove theta one.
+
+So now the machine says:
+I prove that I prove that I am an automated theorem prover.
+
+And the pattern continues.
+Each new formula says that the machine proves the previous formula.
+
+A useful picture is a stack of certificates.
+
+Certificate zero says:
+I am a prover.
+
+Certificate one says:
+I issue certificate zero.
+
+Certificate two says:
+I issue certificate one.
+
+The sequence gives the machine a vocabulary for increasingly deep self-description.
+But it does not guarantee that any particular machine proves every certificate.
+
+Section fifteen point five turns that sequence into levels.
+
+A machine has Level one when it proves theta zero.
+
+It has Level two when it proves theta one.
+
+It has Level three when it proves theta two.
+
+So remember the small index shift:
+theta k corresponds to Level k plus one.
+
+The level belongs to the machine, not to the individual formula.
+
+The formula theta k is the formula associated with Level k plus one.
+
+The machine's level set is simply the collection of levels it attains.
+
+If it proves none of the reflection formulas, its level is zero.
+If it reaches a greatest finite level, that number is its level.
+If it reaches every finite level, its level is omega.
+
+Now comes the surprise in Section fifteen point six.
+
+You might expect the levels to form a staircase:
+if a machine reaches Level three, surely it must also have Levels one and two.
+
+But that conclusion does not follow from the definitions alone.
+
+Imagine a machine whose available theory contains only this sentence:
+
+I prove that I am an automated theorem prover.
+
+That is the Level two formula.
+
+But suppose the simpler sentence,
+I am an automated theorem prover,
+is not provable by the machine.
+
+Then the machine has Level two, but not Level one.
+
+There is no formal contradiction.
+
+The machine is simply wrong about what it proves.
+
+It proves a self-ascription of provability,
+but the claim inside that self-ascription is not backed by an actual proof.
+
+This is why the level set can have gaps.
+
+To repair that problem, the paper introduces provability soundness.
+
+In plain English:
+
+whenever the machine proves,
+I prove formula phi,
+
+the machine really does prove phi.
+
+This is a narrow reliability condition.
+
+It does not say that every theorem of the machine is true in the outside world.
+
+It says only that the machine's proved claims about its own provability are supported by actual proofs within the machine.
+
+Once provability soundness is assumed, the staircase returns.
+
+Suppose the machine has Level n plus one.
+
+That means it proves:
+I prove the Level n formula.
+
+Provability soundness lets us remove the outer phrase, I prove.
+So the machine really proves the Level n formula.
+
+Repeat the same step, and all lower levels follow.
+
+So the central lesson is this.
+
+The internal provability predicate supplies the language of introspection.
+
+The reflection sequence builds deeper and deeper self-descriptions.
+
+The level hierarchy records which of those descriptions the machine proves.
+
+But the hierarchy becomes cumulative only when the machine's claims about its own proving are reliable.
+
+Four sentences to take away.
+
+One:
+the machine can formally say that a named machine proves a named formula.
+
+Two:
+the reflection sequence repeatedly applies that idea to the machine's own basic self-identification.
+
+Three:
+Level n means that the machine proves the reflection formula one step below n.
+
+Four:
+higher levels force lower levels only under an extra condition, such as provability soundness.
+
+That is Sections fifteen point three through fifteen point six, in a hurry.
