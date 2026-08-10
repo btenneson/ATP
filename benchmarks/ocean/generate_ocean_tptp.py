@@ -57,7 +57,7 @@ def write_tptp(g,path):
     with open(path,'w',encoding='utf-8') as f:
         f.write(f"% Ocean benchmark L*={g['Lstar']} seed={g['seed']}\n")
         f.write("% Frozen implication encoding. One graph edge = one benchmark resolution inference.\n")
-        f.write("% prover9: assign(max_seconds, 300).\n")
+        f.write("% prover9: assign(max_seconds, 60).\n")
         f.write(f"fof(start,axiom,p(n{g['source']})).\n")
         for i,(u,v) in enumerate(g['edges']):
             f.write(f"fof(e{i},axiom,(p(n{u}) => p(n{v}))).\n")
