@@ -77,7 +77,7 @@ jobs:
           set -euo pipefail
           git clone --depth 1 https://github.com/AlgorithmicTruth/Prover9.git "$RUNNER_TEMP/Prover9"
           git -C "$RUNNER_TEMP/Prover9" rev-parse HEAD | tee benchmarks/ocean/results_prover9_commit.txt
-          make -C "$RUNNER_TEMP/Prover9" all -j2
+          make -C "$RUNNER_TEMP/Prover9" all
           PROVER9_BIN="$RUNNER_TEMP/Prover9/bin/prover9"
           test -x "$PROVER9_BIN"
           echo "PROVER9_BIN=$PROVER9_BIN" >> "$GITHUB_ENV"
