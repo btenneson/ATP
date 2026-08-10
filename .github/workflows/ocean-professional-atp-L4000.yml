@@ -1,0 +1,208 @@
+name: Ocean professional ATP L4000 full trial
+
+on:
+  push:
+    paths:
+      - '.github/workflows/ocean-professional-atp-L4000.yml'
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate and verify 20 frozen L*=4000 oceans
+        run: python benchmarks/ocean/generate_ocean_tptp.py --out benchmarks/ocean/generated_L4000 --seeds 20 --lengths 4000
+
+      - name: Install common build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git cmake jq gawk curl unzip
+
+      - name: Install SPASS
+        id: install_spass
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y spass
+          SPASS -h 2>&1 | head -20 || true
+
+      - name: Build official E Prover 3.2.5 source release
+        id: install_e
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL 'https://wwwlehre.dhbw-stuttgart.de/~sschulz/WORK/E_DOWNLOAD/V_3.2/E.tgz' -o "$RUNNER_TEMP/E.tgz"
+          tar -xzf "$RUNNER_TEMP/E.tgz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/E"
+          ./configure
+          make rebuild
+          EPROVER_BIN="$RUNNER_TEMP/E/PROVER/eprover"
+          test -x "$EPROVER_BIN"
+          echo "EPROVER_BIN=$EPROVER_BIN" >> "$GITHUB_ENV"
+          "$EPROVER_BIN" --version
+          echo 'E 3.2.5 official source distribution' > "$GITHUB_WORKSPACE/benchmarks/ocean/results_eprover_version_L4000.txt"
+
+      - name: Install Vampire 5.0.1
+        id: install_vampire
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vampire"
+          python - <<'PY'
+          import json, os, pathlib, urllib.request
+          url='https://api.github.com/repos/vprover/vampire/releases/tags/v5.0.1'
+          req=urllib.request.Request(url,headers={'Accept':'application/vnd.github+json','User-Agent':'ocean-benchmark-L4000'})
+          rel=json.load(urllib.request.urlopen(req))
+          assets=rel.get('assets',[])
+          def rank(a):
+              n=a['name'].lower()
+              linux='linux' in n
+              x86=any(x in n for x in ('x86_64','x86-64','amd64','x64'))
+              source=any(x in n for x in ('source','src'))
+              return (linux and x86 and not source, linux and not source, not source)
+          candidates=sorted(assets,key=rank,reverse=True)
+          if not candidates or not rank(candidates[0])[1]:
+              raise SystemExit('No suitable Linux Vampire release asset found')
+          a=candidates[0]
+          dest=pathlib.Path(os.environ['RUNNER_TEMP'])/'vampire'/a['name']
+          urllib.request.urlretrieve(a['browser_download_url'],dest)
+          print('Downloaded',a['name'])
+          PY
+          ASSET=$(find "$RUNNER_TEMP/vampire" -maxdepth 1 -type f | head -1)
+          case "$ASSET" in
+            *.tar.gz|*.tgz) tar -xzf "$ASSET" -C "$RUNNER_TEMP/vampire" ;;
+            *.tar.xz) tar -xJf "$ASSET" -C "$RUNNER_TEMP/vampire" ;;
+            *.zip) unzip -q "$ASSET" -d "$RUNNER_TEMP/vampire" ;;
+            *) chmod +x "$ASSET" ;;
+          esac
+          VAMPIRE_BIN=$(find "$RUNNER_TEMP/vampire" -type f \( -name 'vampire' -o -name 'vampire*' \) -not -name '*.tar*' -not -name '*.zip' | head -1)
+          if [ -z "$VAMPIRE_BIN" ]; then echo 'Vampire binary not found after extraction'; exit 1; fi
+          chmod +x "$VAMPIRE_BIN"
+          echo "VAMPIRE_BIN=$VAMPIRE_BIN" >> "$GITHUB_ENV"
+          "$VAMPIRE_BIN" --version || "$VAMPIRE_BIN" -h | head || true
+
+      - name: Install current LADR-2026 Prover9
+        id: install_prover9
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/AlgorithmicTruth/Prover9.git "$RUNNER_TEMP/Prover9"
+          git -C "$RUNNER_TEMP/Prover9" rev-parse HEAD | tee benchmarks/ocean/results_prover9_commit_L4000.txt
+          make -C "$RUNNER_TEMP/Prover9" all
+          PROVER9_BIN="$RUNNER_TEMP/Prover9/bin/prover9"
+          test -x "$PROVER9_BIN"
+          echo "PROVER9_BIN=$PROVER9_BIN" >> "$GITHUB_ENV"
+          "$PROVER9_BIN" -h | head -20 || true
+
+      - name: Record install outcomes and environment
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p benchmarks/ocean/results/professional_L4000
+          {
+            echo "runner=$(uname -a)"
+            echo "python=$(python --version 2>&1)"
+            echo "SPASS_install=${{ steps.install_spass.outcome }}"
+            echo "E_install=${{ steps.install_e.outcome }}"
+            echo "Vampire_install=${{ steps.install_vampire.outcome }}"
+            echo "Prover9_install=${{ steps.install_prover9.outcome }}"
+            echo "eprover=${EPROVER_BIN:-MISSING}"
+            echo "spass=$(command -v SPASS || echo MISSING)"
+            echo "vampire=${VAMPIRE_BIN:-MISSING}"
+            echo "prover9=${PROVER9_BIN:-MISSING}"
+          } > benchmarks/ocean/results/professional_L4000/environment.txt
+          cat benchmarks/ocean/results/professional_L4000/environment.txt
+
+      - name: Run full L*=4000 trial with two-solver error tolerance
+        id: trial
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json, os, statistics, traceback
+          from pathlib import Path
+          import benchmarks.ocean.run_professional_atps as base
+
+          probs=Path('benchmarks/ocean/generated_L4000')
+          out=Path('benchmarks/ocean/results/professional_L4000')
+          out.mkdir(parents=True,exist_ok=True)
+          manifest={x['file']:x for x in json.loads((probs/'manifest.json').read_text())}
+          rows=[]
+          faulted_solvers=set()
+
+          def save_partial():
+              if rows:
+                  with open(out/'rows.csv','w',newline='',encoding='utf-8') as f:
+                      w=csv.DictWriter(f,fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
+              (out/'faulted_solvers.json').write_text(json.dumps(sorted(faulted_solvers),indent=2),encoding='utf-8')
+
+          for p in sorted(probs.glob('ocean_L*_seed*.p')):
+              for name in base.SOLVERS:
+                  try:
+                      r=base.run_one(name,p,out/'proofs')
+                  except Exception as e:
+                      faulted_solvers.add(name)
+                      cmd=' '.join(base.SOLVERS[name](p))
+                      od=out/'proofs'/name
+                      od.mkdir(parents=True,exist_ok=True)
+                      err=''.join(traceback.format_exception_only(type(e),e)).strip()
+                      (od/(p.stem+'.out')).write_text('RUNNER EXCEPTION: '+err+'\n',encoding='utf-8')
+                      r={'solver':name,'file':p.name,'status':'FAULT','wall_s':0.0,'returncode':-999,
+                         'native_inference_records':0,'time_limit_s':base.TIME_LIMIT,'command':cmd,'error':err}
+                  else:
+                      r['error']=''
+                      if r['status']=='FAULT':
+                          faulted_solvers.add(name)
+                  r.update({'Lstar':manifest[p.name]['Lstar'],'seed':manifest[p.name]['seed']})
+                  rows.append(r)
+                  print(name,p.name,r['status'],f"{r['wall_s']:.6f}s",flush=True)
+                  save_partial()
+                  if len(faulted_solvers)>2:
+                      print('ABORT: more than two distinct ATPs have runtime/install faults:',sorted(faulted_solvers),flush=True)
+                      raise SystemExit(3)
+
+          summary=[]
+          for L in sorted({r['Lstar'] for r in rows}):
+              for name in base.SOLVERS:
+                  rr=[r for r in rows if r['Lstar']==L and r['solver']==name]
+                  ok=[r for r in rr if r['status']=='PROVED']
+                  summary.append({
+                      'Lstar':L,'solver':name,'proved':len(ok),'n':len(rr),
+                      'median_wall_s':statistics.median([r['wall_s'] for r in ok]) if ok else None,
+                      'median_native_inference_records':statistics.median([r['native_inference_records'] for r in ok]) if ok else None,
+                      'timeouts':sum(r['status']=='TIMEOUT' for r in rr),
+                      'bounded_unknown':sum(r['status']=='BOUNDED_UNKNOWN' for r in rr),
+                      'faults':sum(r['status']=='FAULT' for r in rr),
+                      'unknown_output':sum(r['status']=='UNKNOWN_OUTPUT' for r in rr),
+                      'time_limit_s':base.TIME_LIMIT
+                  })
+          (out/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          save_partial()
+          print(json.dumps(summary,indent=2))
+          PY
+
+      - name: Show summary
+        if: always()
+        run: |
+          cat benchmarks/ocean/results/professional_L4000/summary.json || true
+          cat benchmarks/ocean/results/professional_L4000/faulted_solvers.json || true
+
+      - name: Upload L*=4000 proofs, manifest, and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocean-professional-atp-results-L4000
+          path: |
+            benchmarks/ocean/generated_L4000/
+            benchmarks/ocean/results/professional_L4000/
+            benchmarks/ocean/results_eprover_version_L4000.txt
+            benchmarks/ocean/results_prover9_commit_L4000.txt
+          retention-days: 90
