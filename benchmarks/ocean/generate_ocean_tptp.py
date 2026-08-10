@@ -67,10 +67,13 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--out',default='benchmarks/ocean/generated')
     ap.add_argument('--seeds',type=int,default=20)
+    ap.add_argument('--lengths',type=int,nargs='+',default=[20,100],help='Declared shortest proof lengths, e.g. --lengths 10 or --lengths 20 100')
     args=ap.parse_args()
     out=Path(args.out); out.mkdir(parents=True,exist_ok=True)
+    for old in out.glob('ocean_L*_seed*.p'):
+        old.unlink()
     manifest=[]
-    for L in (20,100):
+    for L in args.lengths:
         for seed in range(1,args.seeds+1):
             g=make_ocean(L,seed)
             d=bfs_distance(g)
@@ -80,5 +83,5 @@ def main():
             write_tptp(g,out/name)
             manifest.append({'file':name,'Lstar':L,'seed':seed,'vertices':len(g['nodes']),'edges':len(g['edges']),'source':g['source'],'target':g['target'],'bfs_verified_Lstar':d})
     with open(out/'manifest.json','w',encoding='utf-8') as f: json.dump(manifest,f,indent=2)
-    print(f'generated {len(manifest)} instances; all BFS-verified at declared L*')
+    print(f'generated {len(manifest)} instances for lengths {args.lengths}; all BFS-verified at declared L*')
 if __name__=='__main__': main()
