@@ -28,22 +28,23 @@ jobs:
       - name: Install build tools and SPASS
         run: |
           sudo apt-get update
-          sudo apt-get install -y spass build-essential git cmake jq gawk
+          sudo apt-get install -y spass build-essential git cmake jq gawk curl
           SPASS -h 2>&1 | head -20 || true
 
-      - name: Build E Prover from official repository
+      - name: Build official E Prover 3.2.5 source release
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/eprover/eprover.git "$RUNNER_TEMP/eprover"
-          git -C "$RUNNER_TEMP/eprover" rev-parse HEAD | tee benchmarks/ocean/results_eprover_commit.txt
-          cd "$RUNNER_TEMP/eprover"
+          curl -fsSL 'https://wwwlehre.dhbw-stuttgart.de/~sschulz/WORK/E_DOWNLOAD/V_3.2/E.tgz' -o "$RUNNER_TEMP/E.tgz"
+          tar -xzf "$RUNNER_TEMP/E.tgz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/E"
           ./configure
           make rebuild
-          EPROVER_BIN="$RUNNER_TEMP/eprover/PROVER/eprover"
+          EPROVER_BIN="$RUNNER_TEMP/E/PROVER/eprover"
           test -x "$EPROVER_BIN"
           echo "EPROVER_BIN=$EPROVER_BIN" >> "$GITHUB_ENV"
           "$EPROVER_BIN" --version
+          echo 'E 3.2.5 official source distribution' > "$GITHUB_WORKSPACE/benchmarks/ocean/results_eprover_version.txt"
 
       - name: Install Vampire 5.0.1
         shell: bash
@@ -105,7 +106,6 @@ jobs:
             echo "python=$(python --version 2>&1)"
             echo "eprover=$EPROVER_BIN"
             "$EPROVER_BIN" --version 2>&1 | head -5 || true
-            echo "eprover_commit=$(cat benchmarks/ocean/results_eprover_commit.txt)"
             echo "spass=$(command -v SPASS)"
             echo "vampire=$VAMPIRE_BIN"
             "$VAMPIRE_BIN" --version 2>&1 | head -5 || true
@@ -129,6 +129,6 @@ jobs:
           path: |
             benchmarks/ocean/generated/
             benchmarks/ocean/results/professional/
-            benchmarks/ocean/results_eprover_commit.txt
+            benchmarks/ocean/results_eprover_version.txt
             benchmarks/ocean/results_prover9_commit.txt
           retention-days: 90
