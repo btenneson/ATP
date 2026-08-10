@@ -22,8 +22,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Generate and verify frozen oceans
-        run: python benchmarks/ocean/generate_ocean_tptp.py --seeds 20
+      - name: Generate and verify 20 frozen L*=10 oceans
+        run: python benchmarks/ocean/generate_ocean_tptp.py --seeds 20 --lengths 10
 
       - name: Install E Prover and SPASS
         run: |
@@ -100,7 +100,7 @@ jobs:
           } > benchmarks/ocean/results/professional/environment.txt
           cat benchmarks/ocean/results/professional/environment.txt
 
-      - name: Run 20 L*=20 and 20 L*=100 instances
+      - name: Run 20 L*=10 instances
         run: python benchmarks/ocean/run_professional_atps.py
 
       - name: Show summary
@@ -111,7 +111,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ocean-professional-atp-results
+          name: ocean-professional-atp-results-L10
           path: |
             benchmarks/ocean/generated/
             benchmarks/ocean/results/professional/
