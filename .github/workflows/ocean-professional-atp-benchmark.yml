@@ -25,12 +25,25 @@ jobs:
       - name: Generate and verify 20 frozen L*=10 oceans
         run: python benchmarks/ocean/generate_ocean_tptp.py --seeds 20 --lengths 10
 
-      - name: Install E Prover and SPASS
+      - name: Install build tools and SPASS
         run: |
           sudo apt-get update
-          sudo apt-get install -y eprover spass build-essential git cmake jq
-          eprover --version || true
-          SPASS -v || true
+          sudo apt-get install -y spass build-essential git cmake jq gawk
+          SPASS -h 2>&1 | head -20 || true
+
+      - name: Build E Prover from official repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/eprover/eprover.git "$RUNNER_TEMP/eprover"
+          git -C "$RUNNER_TEMP/eprover" rev-parse HEAD | tee benchmarks/ocean/results_eprover_commit.txt
+          cd "$RUNNER_TEMP/eprover"
+          ./configure
+          make rebuild
+          EPROVER_BIN="$RUNNER_TEMP/eprover/PROVER/eprover"
+          test -x "$EPROVER_BIN"
+          echo "EPROVER_BIN=$EPROVER_BIN" >> "$GITHUB_ENV"
+          "$EPROVER_BIN" --version
 
       - name: Install Vampire 5.0.1
         shell: bash
@@ -90,17 +103,18 @@ jobs:
           {
             echo "runner=$(uname -a)"
             echo "python=$(python --version 2>&1)"
-            echo "eprover=$(command -v eprover)"
-            eprover --version 2>&1 | head -5 || true
+            echo "eprover=$EPROVER_BIN"
+            "$EPROVER_BIN" --version 2>&1 | head -5 || true
+            echo "eprover_commit=$(cat benchmarks/ocean/results_eprover_commit.txt)"
             echo "spass=$(command -v SPASS)"
             echo "vampire=$VAMPIRE_BIN"
             "$VAMPIRE_BIN" --version 2>&1 | head -5 || true
             echo "prover9=$PROVER9_BIN"
-            git -C "$RUNNER_TEMP/Prover9" rev-parse HEAD || true
+            echo "prover9_commit=$(cat benchmarks/ocean/results_prover9_commit.txt)"
           } > benchmarks/ocean/results/professional/environment.txt
           cat benchmarks/ocean/results/professional/environment.txt
 
-      - name: Run 20 L*=10 instances
+      - name: Run 20 L*=10 instances with 60-second hard breakpoint
         run: python benchmarks/ocean/run_professional_atps.py
 
       - name: Show summary
@@ -115,5 +129,6 @@ jobs:
           path: |
             benchmarks/ocean/generated/
             benchmarks/ocean/results/professional/
+            benchmarks/ocean/results_eprover_commit.txt
             benchmarks/ocean/results_prover9_commit.txt
           retention-days: 90
