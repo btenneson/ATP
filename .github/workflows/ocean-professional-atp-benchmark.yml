@@ -5,6 +5,10 @@ on:
     paths:
       - 'benchmarks/ocean/**'
       - '.github/workflows/ocean-professional-atp-benchmark.yml'
+  pull_request:
+    paths:
+      - 'benchmarks/ocean/**'
+      - '.github/workflows/ocean-professional-atp-benchmark.yml'
   workflow_dispatch:
 
 jobs:
