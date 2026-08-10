@@ -18,7 +18,6 @@ def status_from_output(name,text,rc,timed_out):
     return 'UNKNOWN_OUTPUT'
 
 def native_inference_count(text):
-    # Secondary/native statistic only; it is not the benchmark-normalized L*.
     return len(re.findall(r'\binference\s*\(',text))
 
 def run_one(name,p,outdir):
@@ -51,7 +50,8 @@ def main():
     with open(out/'rows.csv','w',newline='',encoding='utf-8') as f:
         w=csv.DictWriter(f,fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
     summary=[]
-    for L in (20,100):
+    lengths=sorted({r['Lstar'] for r in rows})
+    for L in lengths:
         for name in SOLVERS:
             rr=[r for r in rows if r['Lstar']==L and r['solver']==name]
             ok=[r for r in rr if r['status']=='PROVED']
