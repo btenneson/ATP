@@ -2,11 +2,13 @@
 import argparse, csv, json, os, re, statistics, subprocess, time
 from pathlib import Path
 
+TIMEOUT_S = int(os.environ.get('OCEAN_SOLVER_TIMEOUT_S', '60'))
+
 SOLVERS={
- 'Vampire': lambda p: [os.environ.get('VAMPIRE_BIN','vampire'),'--input_syntax','tptp','-t','300','-p','tptp',str(p)],
- 'E': lambda p: ['eprover','--auto','--cpu-limit=300','--proof-object','--tstp-format',str(p)],
- 'SPASS': lambda p: ['SPASS','-TPTP=2','-TimeLimit=300','-DocProof=1',str(p)],
- 'Prover9': lambda p: [os.environ.get('PROVER9_BIN','prover9'),'-t','300','-f',str(p)],
+ 'Vampire': lambda p: [os.environ.get('VAMPIRE_BIN','vampire'),'--input_syntax','tptp','-t',str(TIMEOUT_S),'-p','tptp',str(p)],
+ 'E': lambda p: ['eprover','--auto',f'--cpu-limit={TIMEOUT_S}','--proof-object','--tstp-format',str(p)],
+ 'SPASS': lambda p: ['SPASS','-TPTP=2',f'-TimeLimit={TIMEOUT_S}','-DocProof=1',str(p)],
+ 'Prover9': lambda p: [os.environ.get('PROVER9_BIN','prover9'),'-t',str(TIMEOUT_S),'-f',str(p)],
 }
 
 def status_from_output(name,text,rc,timed_out):
@@ -24,7 +26,9 @@ def run_one(name,p,outdir):
     cmd=SOLVERS[name](p)
     t0=time.perf_counter(); timed=False
     try:
-        cp=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=300,stdin=subprocess.DEVNULL)
+        # Give the operating-system wrapper a small grace interval beyond the
+        # prover's own 60-second limit so the prover can print its final status.
+        cp=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=TIMEOUT_S+5,stdin=subprocess.DEVNULL)
         rc=cp.returncode; text=cp.stdout
     except subprocess.TimeoutExpired as e:
         timed=True; rc=124
@@ -32,7 +36,7 @@ def run_one(name,p,outdir):
     wall=time.perf_counter()-t0
     od=outdir/name; od.mkdir(parents=True,exist_ok=True)
     (od/(p.stem+'.out')).write_text(text,encoding='utf-8',errors='replace')
-    return {'solver':name,'file':p.name,'status':status_from_output(name,text,rc,timed),'wall_s':wall,'returncode':rc,'native_inference_records':native_inference_count(text)}
+    return {'solver':name,'file':p.name,'status':status_from_output(name,text,rc,timed),'wall_s':wall,'timeout_s':TIMEOUT_S,'returncode':rc,'native_inference_records':native_inference_count(text)}
 
 def main():
     ap=argparse.ArgumentParser()
@@ -55,7 +59,7 @@ def main():
         for name in SOLVERS:
             rr=[r for r in rows if r['Lstar']==L and r['solver']==name]
             ok=[r for r in rr if r['status']=='PROVED']
-            summary.append({'Lstar':L,'solver':name,'proved':len(ok),'n':len(rr),'median_wall_s':statistics.median([r['wall_s'] for r in ok]) if ok else None,'median_native_inference_records':statistics.median([r['native_inference_records'] for r in ok]) if ok else None,'timeouts':sum(r['status']=='TIMEOUT' for r in rr),'faults':sum(r['status']=='FAULT' for r in rr),'unknown_output':sum(r['status']=='UNKNOWN_OUTPUT' for r in rr)})
+            summary.append({'Lstar':L,'solver':name,'proved':len(ok),'n':len(rr),'timeout_s':TIMEOUT_S,'median_wall_s':statistics.median([r['wall_s'] for r in ok]) if ok else None,'median_native_inference_records':statistics.median([r['native_inference_records'] for r in ok]) if ok else None,'timeouts':sum(r['status']=='TIMEOUT' for r in rr),'faults':sum(r['status']=='FAULT' for r in rr),'unknown_output':sum(r['status']=='UNKNOWN_OUTPUT' for r in rr)})
     (out/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
     print(json.dumps(summary,indent=2))
 if __name__=='__main__': main()
