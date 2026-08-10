@@ -5,7 +5,7 @@ from pathlib import Path
 TIME_LIMIT=60
 SOLVERS={
  'Vampire': lambda p: [os.environ.get('VAMPIRE_BIN','vampire'),'--input_syntax','tptp','-t',str(TIME_LIMIT),'-p','tptp',str(p)],
- 'E': lambda p: ['eprover','--auto',f'--cpu-limit={TIME_LIMIT}','--proof-object','--tstp-format',str(p)],
+ 'E': lambda p: [os.environ.get('EPROVER_BIN','eprover'),'--auto',f'--cpu-limit={TIME_LIMIT}','--proof-object',str(p)],
  'SPASS': lambda p: ['SPASS','-TPTP=2',f'-TimeLimit={TIME_LIMIT}','-DocProof=1',str(p)],
  'Prover9': lambda p: [os.environ.get('PROVER9_BIN','prover9'),'-t',str(TIME_LIMIT),'-f',str(p)],
 }
