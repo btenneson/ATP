@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from .core import ALDRunner, ConjectureSpec, FormalEnvironment, RunResult
+from .core import ConjectureSpec, FormalEnvironment, RunResult
+from .experimental import CreativityALDRunner
 from .logic import Formula
 
 
@@ -15,4 +16,4 @@ def classical_lem_spec() -> ConjectureSpec:
 
 
 def run_classical_lem(global_budget: int = 256) -> RunResult:
-    return ALDRunner(classical_lem_spec(), activation_slice=64).run(global_budget)
+    return CreativityALDRunner(classical_lem_spec(), activation_slice=64).run(global_budget)
