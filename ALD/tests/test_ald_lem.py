@@ -12,6 +12,7 @@ from ald.core import (
 )
 from ald.logic import Formula, Sequent
 from ald.search import BackwardLKSearch
+from ald.experimental import ControlledProofAgent
 from ald.verifier import ClassicalLKVerifier
 
 
@@ -119,6 +120,34 @@ class ALDLEMTests(unittest.TestCase):
         self.assertGreaterEqual(rescued.counterfactual_admissions, 1)
         verification = ClassicalLKVerifier().verify_proof(rescued.certificate)
         self.assertTrue(verification.accepted)
+
+    def test_controlled_agent_wires_counterfactual_profile_into_search(self):
+        p = Formula.atom("p")
+        q = Formula.atom("q")
+        r = Formula.atom("r")
+        s = Formula.atom("s")
+        t = Formula.atom("t")
+        ordinary_first = Formula.disj(r, s)
+        rescue_action = Formula.disj(p, Formula.disj(q, t))
+        goal = Sequent.make((p,), (ordinary_first, rescue_action))
+
+        no_rescue_profile = CreativityProfile(
+            "capped", 0.0, 1, 0.5, 0.0, 0.0, 0.0, 0, 0.0, 7
+        )
+        rescued_profile = CreativityProfile(
+            "counterfactual", 0.0, 1, 0.5, 0.0, 0.0, 0.0, 0, 1.0, 7
+        )
+        capped_agent = ControlledProofAgent(
+            AgentId.PROVER, SettlementLabel.PROVED, goal, no_rescue_profile, frozenset()
+        )
+        rescued_agent = ControlledProofAgent(
+            AgentId.PROVER, SettlementLabel.PROVED, goal, rescued_profile, frozenset()
+        )
+        capped = capped_agent.step((), 2)
+        rescued = rescued_agent.step((), 2)
+        self.assertIsNone(capped.candidate)
+        self.assertIsNotNone(rescued.candidate)
+        self.assertIn("counterfactual_admissions=1", rescued.note)
 
 
 if __name__ == "__main__":
