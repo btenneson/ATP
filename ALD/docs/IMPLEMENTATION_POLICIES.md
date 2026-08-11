@@ -1,61 +1,60 @@
-# ALD implementation policies — initial code contract
+# ALD Implementation Policies — Code-Facing Contract
 
-This file mirrors the implementation commitments established before coding. The longer rationale is preserved in the project policy document; this Markdown version is the code-facing contract.
+This file is the implementation-facing companion to the research policy document. It records the rules the current code must preserve while the architecture grows.
 
-## Settlement semantics
+## Settlement integrity
 
-1. Freeze the formal environment, target, negated target, inference rules, parser/normalizer version, verifier version, and background assumptions before search.
-2. Emit `PROVED`, `REFUTED`, or `INDEPENDENT` only with a verifier-accepted certificate.
-3. A finite resource limit returns `BOUNDED_UNKNOWN`, never `INDEPENDENT`.
-4. Crashes or invalid runtime conditions return `IMPLEMENTATION_FAILURE` rather than a mathematical conclusion.
+1. `PROVED` requires a verifier-accepted certificate for `A ⊢ C`.
+2. `REFUTED` requires a verifier-accepted certificate for `A ⊢ ¬C`.
+3. `INDEPENDENT` requires an appropriate verifier-accepted metamathematical certificate.
+4. Reaching a finite resource limit returns `BOUNDED_UNKNOWN`, never `INDEPENDENT`.
+5. Software failures return `IMPLEMENTATION_FAILURE`, never a mathematical settlement.
 
-## Agent architecture
+## Shared-bank integrity
 
-5. Maintain distinct Prover (P), Refuter (R), and Independence (I) objectives.
-6. Preserve private search state for each agent.
-7. Permit heterogeneous search profiles; do not equate raw exploration with measured creativity.
+1. The bank is append-only during a run.
+2. Nothing enters the bank before verification.
+3. A reusable proof lemma must carry its proof certificate.
+4. Reuse by another proof agent must be represented inside the new proof certificate, currently through an explicit verifier-checked `CUT`.
+5. The verifier checks the composed proof again; prior acceptance of a bank record is not a bypass around verification.
+6. Every accepted record preserves producer, objective, cost, verifier version, and parent-lemma provenance.
+7. Productive reuse is logged separately, including producing and consuming objectives.
 
-## Shared verified bank
+## Agent separation
 
-8. The bank is append-only and monotonic during a run.
-9. No candidate enters the bank without verification.
-10. Share verified mathematics, not mandatory attention: agents may rank shared lemmas differently.
-11. Record provenance, production cost, verifier version, reuse, and cross-objective reuse.
+1. P, R, and I retain distinct objective identifiers and private state.
+2. Sharing a lemma makes it available; it does not force another agent to attend to it.
+3. Search-control profiles are separate and reproducible for each role.
+4. Profile values are logged and hashed so matched experiments can reproduce them exactly.
 
-## Creativity and search
+## Creativity-control discipline
 
-12. Optimize verified creative yield and proof-search utility, not temperature or entropy alone.
-13. Support controlled, logged counterfactual admission outside ordinary candidate caps.
-14. Introduce adaptive creativity only through explicit, predeclared signals.
-15. Preserve a diversity reserve so the shared bank does not collapse all agents onto one route.
-16. Measure system-level and cross-agent creative contribution in addition to per-agent outcomes.
+1. Search controls are inputs, not measured creativity.
+2. The current bootstrap operationalizes candidate width, lemma-construction budget fraction, and bank-reuse limit.
+3. Temperature, breadth/depth balance, novelty pressure, restart rate, and counterfactual-admission rate are represented and logged but are not yet behaviorally active in the deterministic LK search.
+4. The code and documentation must not claim those inactive controls are implemented until they actually alter search.
+5. Architecture complexity must be charged against the same global benchmark budget when compared experimentally.
 
-## Scheduler and resources
+## Benchmark integrity
 
-17. Begin with a simple fair scheduler.
-18. Charge meaningful computation to one frozen global budget.
-19. Stop immediately when the first valid settlement certificate is accepted.
+1. The formal environment and target are frozen and hashed before search.
+2. The classical LEM sanity benchmark does not pass the known expected answer to search agents.
+3. Auxiliary lemma generation excludes the benchmark conjecture and its negation, so the lemma mechanism cannot become a disguised answer channel.
+4. Matched isolated-versus-shared experiments must use the same theorem set, seeds, verifier, hardware, and global resource accounting.
 
-## ALD-LEM-01 benchmark
+## Current acceptance checks
 
-20. Represent `C := φ ∨ ¬φ` and `¬C := ¬(φ ∨ ¬φ)` explicitly and hash the target.
-21. Start in an explicitly classical propositional environment as a sanity test.
-22. Do not expose the expected answer or a target-specific proof route to the search agents.
-23. Independence requires its own machine-checkable certificate class; search failure is never enough.
+The bootstrap regression suite must continue to demonstrate:
 
-## Acceptance criteria represented in this bootstrap
+- classical excluded middle can settle `PROVED` by checked proof;
+- an atom over the empty classical theory can settle `INDEPENDENT` by checked model pair;
+- the negation of excluded middle can settle `REFUTED`;
+- a tiny budget returns `BOUNDED_UNKNOWN`;
+- P/R/I profiles are distinct and logged;
+- a verified lemma produced under one objective can be consumed under another objective through a verifier-checked proof composition, with provenance and cross-objective reuse recorded.
 
-- environment and target hashes are logged;
-- P, R, and I are distinct objects;
-- all deposits are verifier-approved;
-- the shared bank is monotonic and provenance-bearing;
-- a global budget is enforced;
-- budget exhaustion returns `BOUNDED_UNKNOWN`;
-- settlement requires a machine-checkable certificate;
-- classical LEM can reach `PROVED` without an answer flag;
-- an atom over the empty classical theory can reach `INDEPENDENT` using a verified model pair;
-- a negated LEM target can reach `REFUTED` through a verified proof of its negation.
+These are architecture tests. They do not by themselves establish that shared memory or heterogeneous profiles improve creative yield on held-out benchmarks.
 
-## Not yet satisfied
+## Next unsatisfied policies
 
-The bootstrap does not yet implement meaningful shared-lemma reuse, creativity-profile sweeps, counterfactual search toggles, adaptive creativity, or the matched isolated-versus-shared experiment. Those are intentionally deferred until the verifier/search/budget spine is stable.
+The next code layers are ranked candidate selection, behaviorally active counterfactual admission, richer lemma mining, normalized proof-novelty measurement, adaptive creativity/scheduling, and the matched isolated-versus-shared creativity experiment.
