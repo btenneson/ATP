@@ -10,7 +10,9 @@ from ald.core import (
     RunStatus,
     SettlementLabel,
 )
-from ald.logic import Formula
+from ald.logic import Formula, Sequent
+from ald.search import BackwardLKSearch
+from ald.verifier import ClassicalLKVerifier
 
 
 def profile(name: str, lemma_fraction: float, bank_reuse_limit: int = 8) -> CreativityProfile:
@@ -84,6 +86,39 @@ class ALDLEMTests(unittest.TestCase):
         profile_lines = [line for line in result.log if line.startswith("profile agent=")]
         self.assertEqual(len(profile_lines), 3)
         self.assertEqual(len(set(profile_lines)), 3)
+
+    def test_counterfactual_admission_can_rescue_a_capped_search(self):
+        p = Formula.atom("p")
+        q = Formula.atom("q")
+        r = Formula.atom("r")
+        s = Formula.atom("s")
+        t = Formula.atom("t")
+        ordinary_first = Formula.disj(r, s)
+        rescue_action = Formula.disj(p, Formula.disj(q, t))
+        goal = Sequent.make((p,), (ordinary_first, rescue_action))
+
+        capped = BackwardLKSearch().search(
+            goal,
+            2,
+            candidate_width=1,
+            temperature=0.0,
+            counterfactual_admission_rate=0.0,
+            seed=7,
+        )
+        self.assertIsNone(capped.certificate)
+
+        rescued = BackwardLKSearch().search(
+            goal,
+            2,
+            candidate_width=1,
+            temperature=0.0,
+            counterfactual_admission_rate=1.0,
+            seed=7,
+        )
+        self.assertIsNotNone(rescued.certificate)
+        self.assertGreaterEqual(rescued.counterfactual_admissions, 1)
+        verification = ClassicalLKVerifier().verify_proof(rescued.certificate)
+        self.assertTrue(verification.accepted)
 
 
 if __name__ == "__main__":
