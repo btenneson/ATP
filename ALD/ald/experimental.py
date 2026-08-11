@@ -11,6 +11,7 @@ from .core import (
     CreativityProfile,
     LemmaRecord,
     ProofAgent,
+    RunStatus,
     SettlementLabel,
 )
 from .logic import Formula, Sequent
@@ -107,14 +108,18 @@ class ControlledProofAgent(ProofAgent):
 
 
 class CreativityALDRunner(ALDRunner):
-    """ALD runner that activates the proof-search controls stored in creativity profiles."""
+    """ALD runner that activates proof-search controls and bank-visibility conditions."""
 
     def __init__(
         self,
         spec: ConjectureSpec,
         activation_slice: int = 64,
         profiles: Mapping[AgentId, CreativityProfile] | None = None,
+        sharing_mode: str = "shared",
     ) -> None:
+        if sharing_mode not in {"shared", "isolated"}:
+            raise ValueError("sharing_mode must be 'shared' or 'isolated'")
+        self.sharing_mode = sharing_mode
         super().__init__(spec, activation_slice=activation_slice, profiles=profiles)
         forbidden = frozenset({spec.conjecture, Formula.neg(spec.conjecture)})
         self.agents[AgentId.PROVER] = ControlledProofAgent(
@@ -131,3 +136,87 @@ class CreativityALDRunner(ALDRunner):
             self.profiles[AgentId.REFUTER],
             forbidden,
         )
+
+    def _visible_bank(self, agent_id: AgentId):
+        snapshot = self.bank.snapshot()
+        if self.sharing_mode == "shared":
+            return snapshot
+        return tuple(record for record in snapshot if record.agent == agent_id)
+
+    def run(self, global_budget: int):
+        if global_budget <= 0:
+            raise ValueError("global_budget must be positive")
+        used = 0
+        activations = 0
+        log: list[str] = [
+            f"environment_hash={self.spec.environment.environment_hash}",
+            f"target_hash={self.spec.target_hash}",
+            f"target={self.spec.conjecture}",
+            f"sharing_mode={self.sharing_mode}",
+        ]
+        for agent_id in (AgentId.PROVER, AgentId.REFUTER, AgentId.INDEPENDENCE):
+            profile = self.profiles[agent_id]
+            log.append(
+                f"profile agent={agent_id.value} name={profile.name} hash={profile.profile_hash}"
+            )
+        try:
+            while used < global_budget:
+                agent_id = self.scheduler.next_agent()
+                remaining = global_budget - used
+                slice_budget = min(self.activation_slice, remaining)
+                step = self.agents[agent_id].step(self._visible_bank(agent_id), slice_budget)
+                activations += 1
+                used += step.cost
+                log.append(
+                    f"activation={activations} agent={agent_id.value} cost={step.cost} "
+                    f"used={used}/{global_budget} note={step.note}"
+                )
+                if step.candidate is None:
+                    if step.cost == 0:
+                        used += 1
+                    continue
+
+                verification = self._verify(step.candidate)
+                log.append(
+                    f"verify agent={agent_id.value} accepted={verification.accepted} "
+                    f"reason={verification.reason}"
+                )
+                if not verification.accepted:
+                    continue
+
+                record = self._record(step.candidate, verification)
+                deposited = self.bank.deposit(record)
+                log.append(
+                    f"deposit agent={agent_id.value} type={record.certificate_type} "
+                    f"id={record.record_id[:12]} deposited={deposited}"
+                )
+                if not deposited:
+                    continue
+
+                for lemma_id in record.parent_lemma_ids:
+                    self.bank.record_reuse(
+                        lemma_id,
+                        step.candidate.agent,
+                        step.candidate.objective,
+                        activations,
+                        productive=True,
+                    )
+                    producer = next(r for r in self.bank.snapshot() if r.record_id == lemma_id)
+                    log.append(
+                        f"reuse lemma={lemma_id[:12]} producer={producer.agent.value} "
+                        f"consumer={step.candidate.agent.value} productive=true"
+                    )
+
+                if step.candidate.settlement_label is not None:
+                    return self._result(
+                        RunStatus.SETTLED,
+                        step.candidate.settlement_label,
+                        used,
+                        activations,
+                        log,
+                    )
+
+            return self._result(RunStatus.BOUNDED_UNKNOWN, None, used, activations, log)
+        except Exception as exc:
+            log.append(f"implementation_failure={type(exc).__name__}: {exc}")
+            return self._result(RunStatus.IMPLEMENTATION_FAILURE, None, used, activations, log)
