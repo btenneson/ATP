@@ -13,6 +13,7 @@ from ald.core import (
 from ald.logic import Formula, Sequent
 from ald.search import BackwardLKSearch
 from ald.experimental import ControlledProofAgent
+from ald.experiments import matched_sharing_trial
 from ald.verifier import ClassicalLKVerifier
 
 
@@ -148,6 +149,28 @@ class ALDLEMTests(unittest.TestCase):
         self.assertIsNone(capped.candidate)
         self.assertIsNotNone(rescued.candidate)
         self.assertIn("counterfactual_admissions=1", rescued.note)
+
+    def test_matched_shared_bank_microbenchmark_reduces_expansions(self):
+        p = Formula.atom("p")
+        lem = Formula.disj(p, Formula.neg(p))
+        target = Formula.disj(lem, p)
+        spec = ConjectureSpec(target, FormalEnvironment(name="matched sharing microbenchmark"))
+        profiles = {
+            AgentId.PROVER: profile("consumer-prover", 0.0),
+            AgentId.REFUTER: profile("lemma-refuter", 0.5),
+            AgentId.INDEPENDENCE: profile("independence", 0.0),
+        }
+        comparison = matched_sharing_trial(
+            spec, global_budget=128, activation_slice=16, profiles=profiles
+        )
+        self.assertTrue(comparison.same_settlement)
+        self.assertEqual(comparison.shared.settlement, SettlementLabel.PROVED)
+        self.assertEqual(comparison.shared.expansions, 7)
+        self.assertEqual(comparison.isolated.expansions, 9)
+        self.assertEqual(comparison.expansion_savings, 2)
+        self.assertAlmostEqual(comparison.relative_expansion_reduction, 2 / 9)
+        self.assertEqual(comparison.shared.cross_objective_reuse_count, 1)
+        self.assertEqual(comparison.isolated.cross_objective_reuse_count, 0)
 
 
 if __name__ == "__main__":
