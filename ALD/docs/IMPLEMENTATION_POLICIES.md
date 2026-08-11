@@ -30,17 +30,26 @@ This file is the implementation-facing companion to the research policy document
 ## Creativity-control discipline
 
 1. Search controls are inputs, not measured creativity.
-2. The current bootstrap operationalizes candidate width, lemma-construction budget fraction, and bank-reuse limit.
-3. Temperature, breadth/depth balance, novelty pressure, restart rate, and counterfactual-admission rate are represented and logged but are not yet behaviorally active in the deterministic LK search.
-4. The code and documentation must not claim those inactive controls are implemented until they actually alter search.
-5. Architecture complexity must be charged against the same global benchmark budget when compared experimentally.
+2. The creativity runner currently activates temperature, candidate width, lemma-construction budget fraction, bank-reuse limit, counterfactual-admission rate, and seed.
+3. Breadth/depth balance, novelty pressure, and restart rate remain represented and logged but are not yet behaviorally active.
+4. A counterfactual action may be admitted only from the set of legal proof actions; verification is unchanged.
+5. The code and documentation must not claim inactive controls are implemented until they actually alter search.
+6. Architecture complexity must be charged against the same global benchmark budget when compared experimentally.
+
+## Matched sharing experiments
+
+1. `shared` and `isolated` conditions must use fresh runners with the same formal target, profiles, seeds, verifier, scheduler design, activation slice, and global budget.
+2. Shared mode exposes the full verifier-certified bank to each agent.
+3. Isolated mode exposes only records produced by the consuming agent itself.
+4. The global audit bank may still record all verified contributions in both conditions; only information visibility changes.
+5. A gain on a constructed microbenchmark is an implementation result, not a population-level estimate of creativity gain.
 
 ## Benchmark integrity
 
 1. The formal environment and target are frozen and hashed before search.
 2. The classical LEM sanity benchmark does not pass the known expected answer to search agents.
 3. Auxiliary lemma generation excludes the benchmark conjecture and its negation, so the lemma mechanism cannot become a disguised answer channel.
-4. Matched isolated-versus-shared experiments must use the same theorem set, seeds, verifier, hardware, and global resource accounting.
+4. Repeated matched experiments over theorem families must use predeclared seeds, budgets, and outcome metrics.
 
 ## Current acceptance checks
 
@@ -51,10 +60,13 @@ The bootstrap regression suite must continue to demonstrate:
 - the negation of excluded middle can settle `REFUTED`;
 - a tiny budget returns `BOUNDED_UNKNOWN`;
 - P/R/I profiles are distinct and logged;
-- a verified lemma produced under one objective can be consumed under another objective through a verifier-checked proof composition, with provenance and cross-objective reuse recorded.
+- a verified lemma produced under one objective can be consumed under another objective through verifier-checked proof composition;
+- a capped proof search can be rescued by a seeded legal counterfactual admission while the verifier remains unchanged;
+- profile counterfactual settings are actually wired into the controlled proof agent;
+- a matched shared-versus-isolated microbenchmark can reproduce the current 7-versus-9 expansion result.
 
-These are architecture tests. They do not by themselves establish that shared memory or heterogeneous profiles improve creative yield on held-out benchmarks.
+These are architecture tests. The 7-versus-9 result is a deliberately constructed instance and does not establish an expected ALD creativity gain on held-out theorem families.
 
 ## Next unsatisfied policies
 
-The next code layers are ranked candidate selection, behaviorally active counterfactual admission, richer lemma mining, normalized proof-novelty measurement, adaptive creativity/scheduling, and the matched isolated-versus-shared creativity experiment.
+The next code layers are richer lemma mining, normalized proof-novelty measurement, behaviorally active breadth/depth and restart controls, adaptive creativity/scheduling, and repeated matched isolated-versus-shared creativity experiments on held-out theorem sets.
