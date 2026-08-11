@@ -13,7 +13,7 @@ class VerificationResult:
 
 
 class ClassicalLKVerifier:
-    VERSION = "ald-lk-verifier-0.1"
+    VERSION = "ald-lk-verifier-0.2"
 
     def verify_proof(self, certificate: ProofCertificate) -> VerificationResult:
         try:
@@ -35,7 +35,20 @@ class ClassicalLKVerifier:
         if principal is None:
             raise ValueError(f"{rule} requires a principal formula")
 
-        if rule == "NOT_R":
+        if rule == "CUT":
+            if len(node.premises) != 2:
+                raise ValueError("CUT requires two premises")
+            lemma_proof, use_proof = node.premises
+            expected_lemma = Sequent.make(node.sequent.antecedent, (principal,))
+            expected_use = Sequent.make(
+                node.sequent.antecedent | {principal}, node.sequent.succedent
+            )
+            if lemma_proof.sequent != expected_lemma:
+                raise ValueError("CUT lemma premise does not match conclusion context")
+            if use_proof.sequent != expected_use:
+                raise ValueError("CUT use premise does not match conclusion context")
+
+        elif rule == "NOT_R":
             if principal.op != "not" or principal not in node.sequent.succedent:
                 raise ValueError("NOT_R principal must be a negation in the succedent")
             if len(node.premises) != 1:
