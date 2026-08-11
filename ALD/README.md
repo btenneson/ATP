@@ -19,6 +19,8 @@ The current bootstrap implements:
 - **Operational shared bank**: verified intermediate theorem lemmas are proof-carrying and can be consumed by another proof agent through an explicit verifier-checked CUT.
 - **Provenance and reuse logging**: every bank record stores its producer/objective, proof certificate, cost, and parent lemma IDs; productive cross-objective reuse is logged separately.
 - **Heterogeneous creativity profiles**: P, R, and I have distinct reproducible profile configurations and hashes.
+- **Creativity-controlled proof search**: candidate caps, seeded temperature perturbation, and controlled counterfactual admission are wired through an experimental runner.
+- **Matched sharing mode**: the same experimental runner can expose the full bank (`shared`) or only an agent's own records (`isolated`).
 - **Scheduler**: auditable round-robin scheduling with a single global expansion budget.
 - **Settlement statuses**: `PROVED`, `REFUTED`, `INDEPENDENT`, plus `BOUNDED_UNKNOWN` and `IMPLEMENTATION_FAILURE`.
 
@@ -30,22 +32,25 @@ A bank lemma is never trusted merely because another agent produced it. If an ag
 
 This makes sharing an attention/search mechanism rather than a relaxation of formal correctness.
 
-## Cross-objective creativity instrumentation
+## Counterfactual search
 
-`RunResult` now exposes:
+The proof-search primitive ranks legal actions with a small transparent structural heuristic. `candidate_width` defines the ordinary active set. A seeded counterfactual mechanism can admit one legal action from outside that cap and try it first. The regression suite contains a case where capped search fails within two expansions but the otherwise identical counterfactual condition finds a verifier-accepted proof.
 
-- `reuse_events`
-- `cross_objective_reuse_count`
-- `verified_lemma_cost`
-- `cross_objective_reuse_efficiency`
+This tests the counterfactual-rescue mechanism; it is not a claim that more counterfactual exploration is always better.
 
-The regression suite includes a small controlled benchmark where Refuter constructs a reusable classical tautology and Prover later consumes it through CUT to settle the target. This is an instrumentation test, not yet evidence that shared memory improves performance on held-out theorem families.
+## Shared-versus-isolated microbenchmark
+
+The repository now contains a matched A/B harness that holds the target, profiles, seeds, verifier, scheduler design, activation slice, and global budget fixed while changing only cross-agent bank visibility.
+
+On one deliberately constructed plumbing benchmark, shared mode settles in **7 charged expansions** and isolated mode settles in **9**, a **2-expansion (22.2%) reduction**. Refuter produces the reusable lemma and Prover consumes it through CUT.
+
+That number is intentionally **not** presented as an estimate of ALD's expected gain on the law of excluded middle or on real theorem families. It proves only that the implemented sharing mechanism can create a measurable resource gain on a controlled instance.
 
 ## Creativity profiles
 
 The profile schema records temperature, candidate width, breadth/depth balance, novelty pressure, restart rate, lemma-construction budget fraction, bank-reuse limit, counterfactual-admission rate, and seed.
 
-In this bootstrap, **candidate width, lemma-construction budget fraction, and bank-reuse limit are operational**. The other fields are already frozen/logged so later ranked-search experiments can activate them without changing the experimental record format. See `docs/CREATIVITY_PROFILES.md`.
+Currently behaviorally active in the creativity runner: temperature, candidate width, lemma-construction allocation, bank-reuse limit, counterfactual admission, and seed. Breadth/depth balance, novelty pressure, and restart rate remain recorded but inactive until the search architecture can implement them honestly. See `docs/CREATIVITY_PROFILES.md`.
 
 ## Run
 
@@ -61,10 +66,10 @@ Run tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite has six tests covering all three settlement outcomes, bounded unknown, distinct profile logging, and cross-objective proof-carrying lemma reuse.
+The current suite has nine tests covering all three settlement outcomes, bounded unknown, distinct profile logging, proof-carrying cross-objective lemma reuse, counterfactual rescue, profile-to-search wiring, and the matched shared-versus-isolated microbenchmark.
 
 ## Important limitations
 
 This is **not yet a general-purpose logic decider**. The proof search currently supports only a small classical propositional LK fragment (`¬`, `∨`). Intermediate lemma generation is intentionally primitive: the bootstrap proposes simple atom-level excluded-middle tautologies so that shared-memory plumbing can be tested without confusing architecture validation with sophisticated lemma mining.
 
-The next implementation layers are ranked candidate selection, controlled counterfactual admission, richer lemma mining, novelty measurement, adaptive creativity/scheduling, and matched isolated-versus-shared experiments under identical global budgets.
+The next implementation layers are richer lemma mining, normalized proof-novelty measurement, breadth/depth control, restarts, adaptive creativity/scheduling, and repeated matched isolated-versus-shared experiments over held-out theorem sets.
