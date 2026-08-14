@@ -1,0 +1,57 @@
+name: Section 13 Cross-Branch Reuse
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - experiments/section13_cross_branch_reuse.py
+      - .github/workflows/section13-cross-branch-reuse.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download current set.mm
+        run: |
+          curl -L --retry 3 --fail \
+            -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/develop/set.mm
+
+      - name: Run Section 13 pilot
+        run: |
+          python experiments/section13_cross_branch_reuse.py \
+            --db set.mm \
+            --out experiments/section13_results \
+            --targets 8 \
+            --scan 12000 \
+            --min-logic 2 \
+            --max-logic 5 \
+            --stage-budget 6000 \
+            --max-depth 7 \
+            --max-open 6 \
+            --opener-cap 24
+
+      - name: Commit measured results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add experiments/section13_results
+          if git diff --cached --quiet; then
+            echo "No result changes to commit."
+            exit 0
+          fi
+          git commit -m "Record Section 13 cross-branch reuse pilot results"
+          git push
