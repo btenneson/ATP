@@ -1,0 +1,202 @@
+[
+  {
+    "target_id": "W001",
+    "formula": "|- ( ( B e. V /\\ A C_ B ) -> ( fi ` A ) C_ ( fi ` B ) )"
+  },
+  {
+    "target_id": "W002",
+    "formula": "|- ( ( ( A e. On /\\ B e. On ) /\\ (/) e. A ) -> (/) e. ( A ^o B ) )"
+  },
+  {
+    "target_id": "W003",
+    "formula": "|- ( A e. On -> ( A ^o (/) ) = 1o )"
+  },
+  {
+    "target_id": "W004",
+    "formula": "|- ( ( ( R We A /\\ R Se A ) /\\ ( B C_ A /\\ B =/= (/) ) ) -> E. y e. B Pred ( R , B , y ) = (/) )"
+  },
+  {
+    "target_id": "W005",
+    "formula": "|- ( ( A e. On /\\ B e. _om ) -> ( A +no B ) = ( A +o B ) )"
+  },
+  {
+    "target_id": "W006",
+    "formula": "|- ( A e. On -> ( A .o 1o ) = A )"
+  },
+  {
+    "target_id": "W007",
+    "formula": "|- ( A e. On -> ( A +o (/) ) = A )"
+  },
+  {
+    "target_id": "W008",
+    "formula": "|- ( ( A e. _om /\\ B e. _om ) -> A C_ ( A +o B ) )"
+  },
+  {
+    "target_id": "W009",
+    "formula": "|- ( A e. Fin -> ( A \" B ) e. Fin )"
+  },
+  {
+    "target_id": "W010",
+    "formula": "|- ( ( A e. _om /\\ B e. _om ) -> ( A .o B ) e. _om )"
+  },
+  {
+    "target_id": "W011",
+    "formula": "|- ( B e. dom rec ( F , A ) -> ( rec ( F , A ) ` suc B ) = ( F ` ( rec ( F , A ) ` B ) ) )"
+  },
+  {
+    "target_id": "W012",
+    "formula": "|- ( A e. V -> ( A. x e. A A. y e. A ( x i^i y ) e. A <-> ( fi ` A ) = A ) )"
+  },
+  {
+    "target_id": "W013",
+    "formula": "|- ( ( ( R We A /\\ R Se A ) /\\ ( B C_ A /\\ A. y e. A ( Pred ( R , A , y ) C_ B -> y e. B ) ) ) -> A = B )"
+  },
+  {
+    "target_id": "W014",
+    "formula": "|- ( ( F : A -1-1-> B /\\ C C_ A ) -> ( `' F \" ( F \" C ) ) = C )"
+  },
+  {
+    "target_id": "W015",
+    "formula": "|- ( ( H Isom R , S ( A , B ) /\\ K C_ A /\\ X = ( H \" K ) ) -> ( H |` K ) Isom R , S ( K , X ) )"
+  },
+  {
+    "target_id": "W016",
+    "formula": "|- ( ( A e. _om /\\ B e. _om ) -> ( A ~< B <-> A C. B ) )"
+  },
+  {
+    "target_id": "W017",
+    "formula": "|- tpos F = ( F o. ( x e. ( ( _V X. _V ) u. { (/) } ) |-> U. `' { x } ) )"
+  },
+  {
+    "target_id": "W018",
+    "formula": "|- ( ( ( A e. On /\\ ( B e. C /\\ Lim B ) ) /\\ (/) e. A ) -> ( A ^o B ) = U_ x e. B ( A ^o x ) )"
+  },
+  {
+    "target_id": "W019",
+    "formula": "|- ( ( ( R We A /\\ R Se A ) /\\ ( F Fn A /\\ A. y e. A ( F ` y ) = ( H ` ( F |` Pred ( R , A , y ) ) ) ) /\\ ( G Fn A /\\ A. y e. A ( G ` y ) = ( H ` ( G |` Pred ( R , A , y ) ) ) ) ) -> F = G )"
+  },
+  {
+    "target_id": "W020",
+    "formula": "|- ( ( A X. A ) ~<_ ( B u. C ) -> ( A ~<_* B \\/ A ~<_ C ) )"
+  },
+  {
+    "target_id": "W021",
+    "formula": "|- ( ( ( B e. On /\\ C e. On ) /\\ (/) e. C ) -> ( A e. B -> ( C .o A ) e. ( C .o B ) ) )"
+  },
+  {
+    "target_id": "W022",
+    "formula": "|- ( ( A e. On /\\ B e. On ) -> A C_ ( B +o A ) )"
+  },
+  {
+    "target_id": "W023",
+    "formula": "|- ( ( _om e. _V /\\ A C_ _om /\\ A. x e. _om E. y e. A x C_ y ) -> A ~~ _om )"
+  },
+  {
+    "target_id": "W024",
+    "formula": "|- ( ( A e. On /\\ B e. On ) -> ( A +no B ) = |^| { x e. On | ( ( +no \" ( { A } X. B ) ) C_ x /\\ ( +no \" ( A X. { B } ) ) C_ x ) } )"
+  },
+  {
+    "target_id": "W025",
+    "formula": "|- ( ( A e. On /\\ B e. On /\\ C e. On ) -> ( A .o ( B +o C ) ) = ( ( A .o B ) +o ( A .o C ) ) )"
+  },
+  {
+    "target_id": "W026",
+    "formula": "|- ( ( ( A e. ( _om ^o C ) /\\ B e. On ) /\\ ( _om ^o C ) C_ B ) -> ( A +o B ) = B )"
+  },
+  {
+    "target_id": "W027",
+    "formula": "|- ( ( A ~~ B /\\ B e. Fin ) -> ( F : A -1-1-> B <-> F : A -1-1-onto-> B ) )"
+  },
+  {
+    "target_id": "W028",
+    "formula": "|- ( A e. _om -> ( A .o 2o ) = ( A +o A ) )"
+  },
+  {
+    "target_id": "W029",
+    "formula": "|- ( ( A e. On /\\ B e. On ) -> A C_ ( B +no A ) )"
+  },
+  {
+    "target_id": "W030",
+    "formula": "|- ( A e. On -> ( A e. Fin <-> A e. _om ) )"
+  },
+  {
+    "target_id": "W031",
+    "formula": "|- ( ( Rel A /\\ B C_ A ) -> ( C e. ( dom A \\ dom B ) -> E. x e. ( A \\ B ) ( 1st ` x ) = C ) )"
+  },
+  {
+    "target_id": "W032",
+    "formula": "|- ( Ord A -> ( A e. Fin <-> A e. _om ) )"
+  },
+  {
+    "target_id": "W033",
+    "formula": "|- ( ( A e. On /\\ B e. On ) -> ( A ^o suc B ) = ( ( A ^o B ) .o A ) )"
+  },
+  {
+    "target_id": "W034",
+    "formula": "|- ( ( A e. On /\\ B e. On /\\ C e. On ) -> ( A C_ B <-> ( A +no C ) C_ ( B +no C ) ) )"
+  },
+  {
+    "target_id": "W035",
+    "formula": "|- ( ( A e. _om /\\ B e. _om /\\ C e. _om ) -> ( A C_ B -> ( A +o C ) C_ ( B +o C ) ) )"
+  },
+  {
+    "target_id": "W036",
+    "formula": "|- E. y ( x e. y /\\ A. z ( z e. y -> E. w ( z e. w /\\ w e. y ) ) )"
+  },
+  {
+    "target_id": "W037",
+    "formula": "|- ( ( A e. On /\\ B e. On ) -> ( A ^o B ) e. On )"
+  },
+  {
+    "target_id": "W038",
+    "formula": "|- ( ( X e. U /\\ Y e. V /\\ Z e. W ) -> ( ( A e. ( ( U X. V ) X. W ) /\\ ( ( 1st ` ( 1st ` A ) ) = X /\\ ( 2nd ` ( 1st ` A ) ) = Y /\\ ( 2nd ` A ) = Z ) ) <-> A = <. X , Y , Z >. ) )"
+  },
+  {
+    "target_id": "W039",
+    "formula": "|- ( B e. On -> ( rec ( F , A ) ` suc B ) = ( F ` ( rec ( F , A ) ` B ) ) )"
+  },
+  {
+    "target_id": "W040",
+    "formula": "|- ( ( A e. ( On \\ 2o ) /\\ B e. On ) -> B C_ ( A ^o B ) )"
+  },
+  {
+    "target_id": "W041",
+    "formula": "|- ( ( A e. On /\\ B e. On ) -> ( A .o B ) ~~ ( A X. B ) )"
+  },
+  {
+    "target_id": "W042",
+    "formula": "|- ( ( A e. On /\\ B e. On /\\ C e. On ) -> ( ( A +no B ) +no C ) = ( A +no ( B +no C ) ) )"
+  },
+  {
+    "target_id": "W043",
+    "formula": "|- ( F : A -1-1-onto-> B -> ( b e. ( ~P A i^i Fin ) |-> ( F \" b ) ) : ( ~P A i^i Fin ) -1-1-onto-> ( ~P B i^i Fin ) )"
+  },
+  {
+    "target_id": "W044",
+    "formula": "|- ( ( A ~< _om /\\ A. x e. A x ~< _om ) -> U. A ~< _om )"
+  },
+  {
+    "target_id": "W045",
+    "formula": "|- ( ( A e. On /\\ B e. On /\\ C e. On ) -> ( A C_ B -> ( A +no C ) C_ ( B +no C ) ) )"
+  },
+  {
+    "target_id": "W046",
+    "formula": "|- ( ( A e. On /\\ ( B e. C /\\ Lim B ) ) -> ( A +o B ) = U_ x e. B ( A +o x ) )"
+  },
+  {
+    "target_id": "W047",
+    "formula": "|- ( ( F Fn A /\\ A e. W /\\ Z e. V ) -> ( ( F supp Z ) = (/) <-> F = ( A X. { Z } ) ) )"
+  },
+  {
+    "target_id": "W048",
+    "formula": "|- ( ( A e. _om /\\ B e. _om ) -> ( A ^o suc B ) = ( ( A ^o B ) .o A ) )"
+  },
+  {
+    "target_id": "W049",
+    "formula": "|- ( A e. V -> U. A = U. ( fi ` A ) )"
+  },
+  {
+    "target_id": "W050",
+    "formula": "|- ( A e. On -> ( recs ( F ) ` A ) = ( F ` ( recs ( F ) |` A ) ) )"
+  }
+]

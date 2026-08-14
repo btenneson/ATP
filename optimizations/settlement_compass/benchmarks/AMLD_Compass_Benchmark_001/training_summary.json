@@ -1,0 +1,62 @@
+[
+  {
+    "label": "pwidg",
+    "assertion": "|- ( A e. V -> A e. ~P A )",
+    "nodes": 346,
+    "edges": 867
+  },
+  {
+    "label": "axreplem",
+    "assertion": "|- ( x = y -> ( E. u ( ph -> A. v ( ps <-> E. w ( z e. x /\\ ch ) ) ) <-> E. u ( ph -> A. v ( ps <-> E. w ( z e. y /\\ ch ) ) ) ) )",
+    "nodes": 214,
+    "edges": 486
+  },
+  {
+    "label": "f1ores",
+    "assertion": "|- ( ( F : A -1-1-> B /\\ C C_ A ) -> ( F |` C ) : C -1-1-onto-> ( F \" C ) )",
+    "nodes": 797,
+    "edges": 2278
+  },
+  {
+    "label": "fiinf2g",
+    "assertion": "|- ( ( R Or A /\\ ( B e. Fin /\\ B =/= (/) /\\ B C_ A ) ) -> E. x e. B ( A. y e. B -. y R x /\\ A. y e. A ( x R y -> E. z e. B z R y ) ) )",
+    "nodes": 1985,
+    "edges": 7887
+  },
+  {
+    "label": "eqop",
+    "assertion": "|- ( A e. ( V X. W ) -> ( A = <. B , C >. <-> ( ( 1st ` A ) = B /\\ ( 2nd ` A ) = C ) ) )",
+    "nodes": 1160,
+    "edges": 3891
+  },
+  {
+    "label": "frpomin",
+    "assertion": "|- ( ( ( R Fr A /\\ R Po A /\\ R Se A ) /\\ ( B C_ A /\\ B =/= (/) ) ) -> E. x e. B A. y e. B -. y R x )",
+    "nodes": 763,
+    "edges": 2139
+  },
+  {
+    "label": "rabab",
+    "assertion": "|- { x e. _V | ph } = { x | ph }",
+    "nodes": 289,
+    "edges": 699
+  },
+  {
+    "label": "rabun2",
+    "assertion": "|- { x e. ( A u. B ) | ph } = ( { x e. A | ph } u. { x e. B | ph } )",
+    "nodes": 422,
+    "edges": 1072
+  },
+  {
+    "label": "eusn",
+    "assertion": "|- ( E! x x e. A <-> E. x A = { x } )",
+    "nodes": 452,
+    "edges": 1215
+  },
+  {
+    "label": "elun2",
+    "assertion": "|- ( A e. B -> A e. ( C u. B ) )",
+    "nodes": 375,
+    "edges": 934
+  }
+]

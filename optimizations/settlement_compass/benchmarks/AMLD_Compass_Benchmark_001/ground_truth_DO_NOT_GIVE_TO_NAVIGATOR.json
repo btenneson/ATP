@@ -1,0 +1,406 @@
+[
+  {
+    "target_id": "W001",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "fiss",
+    "training_landmarks_for_audit": [
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W002",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oen0",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W003",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oe0",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W004",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "tz6.26",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W005",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "naddoa",
+    "training_landmarks_for_audit": [
+      "elun2",
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W006",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "om1",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W007",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oa0",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W008",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "nnaword1",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W009",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "imafi2",
+    "training_landmarks_for_audit": [
+      "eqop"
+    ]
+  },
+  {
+    "target_id": "W010",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "nnmcl",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W011",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "rdgsucg",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W012",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "inficl",
+    "training_landmarks_for_audit": [
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W013",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "wfi",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W014",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "f1imacnv",
+    "training_landmarks_for_audit": [
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W015",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "isores3",
+    "training_landmarks_for_audit": [
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W016",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "nnsdomo",
+    "training_landmarks_for_audit": [
+      "elun2",
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W017",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "dftpos4",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W018",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oelim",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W019",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "wfr3g",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W020",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "unxpwdom",
+    "training_landmarks_for_audit": [
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W021",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "omordi",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W022",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oaword2",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W023",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "unbnn2",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W024",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "naddov",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W025",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "odi",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W026",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oaabs2",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W027",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "f1finf1o",
+    "training_landmarks_for_audit": [
+      "elun2",
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W028",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "nnm2",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W029",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "naddword2",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W030",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "onfin",
+    "training_landmarks_for_audit": [
+      "elun2",
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W031",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "releldmdifi",
+    "training_landmarks_for_audit": [
+      "eqop"
+    ]
+  },
+  {
+    "target_id": "W032",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "ordfin",
+    "training_landmarks_for_audit": [
+      "elun2",
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W033",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oesuc",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W034",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "naddss1",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W035",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "nnawordi",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W036",
+    "ground_truth_class": "I",
+    "source_label_for_audit": "ax-inf",
+    "training_landmarks_for_audit": []
+  },
+  {
+    "target_id": "W037",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oecl",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W038",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "el2xptp0",
+    "training_landmarks_for_audit": [
+      "eqop"
+    ]
+  },
+  {
+    "target_id": "W039",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "rdgsuc",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W040",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oeworde",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W041",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "omxpen",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W042",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "naddass",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W043",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "f1opwfi",
+    "training_landmarks_for_audit": [
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W044",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "unifi2",
+    "training_landmarks_for_audit": [
+      "elun2",
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W045",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "naddssim",
+    "training_landmarks_for_audit": [
+      "frpomin"
+    ]
+  },
+  {
+    "target_id": "W046",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "oalim",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W047",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "fnsuppeq0",
+    "training_landmarks_for_audit": [
+      "rabun2"
+    ]
+  },
+  {
+    "target_id": "W048",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "nnesuc",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  },
+  {
+    "target_id": "W049",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "fiuni",
+    "training_landmarks_for_audit": [
+      "f1ores"
+    ]
+  },
+  {
+    "target_id": "W050",
+    "ground_truth_class": "P",
+    "source_label_for_audit": "recsval",
+    "training_landmarks_for_audit": [
+      "elun2"
+    ]
+  }
+]
