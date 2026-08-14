@@ -32,7 +32,7 @@ jobs:
 
       - name: Run Section 13 pilot
         run: |
-          python experiments/section13_cross_branch_reuse.py \
+          PYTHONPATH=. python experiments/section13_cross_branch_reuse.py \
             --db set.mm \
             --out experiments/section13_results \
             --targets 8 \
