@@ -1,0 +1,63 @@
+name: Settlement Compass Experiment 001
+
+on:
+  push:
+    paths:
+      - 'optimizations/settlement_compass/src/**'
+      - '.github/workflows/settlement-compass-experiment-001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install diagnostic dependencies
+        run: python -m pip install --upgrade pip scikit-learn scipy numpy
+
+      - name: Fetch frozen set.mm candidate snapshot
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/metamath/set.mm/develop/set.mm -o /tmp/set.mm
+          sha256sum /tmp/set.mm
+          test "$(sha256sum /tmp/set.mm | awk '{print $1}')" = "7b70cd8cca88aeb72a8dd97029d0b506015fb0325afec581cdc9add8ca0c8547"
+
+      - name: Reproduce Benchmark 001 package
+        run: |
+          rm -rf optimizations/settlement_compass/benchmarks/AMLD_Compass_Benchmark_001
+          python optimizations/settlement_compass/src/generate_benchmark_001.py \
+            --setmm /tmp/set.mm \
+            --out optimizations/settlement_compass/benchmarks/AMLD_Compass_Benchmark_001
+          cd optimizations/settlement_compass/benchmarks
+          zip -qr AMLD_Compass_Benchmark_001.zip AMLD_Compass_Benchmark_001
+
+      - name: Run first learned-compass navigation diagnostic
+        env:
+          SETMM_PATH: /tmp/set.mm
+          COMPASS_RESULTS_JSON: optimizations/settlement_compass/results/experiment_001_navigation_diagnostic.json
+          COMPASS_RESULTS_CSV: optimizations/settlement_compass/results/experiment_001_navigation_diagnostic.csv
+        run: |
+          mkdir -p optimizations/settlement_compass/results
+          python optimizations/settlement_compass/src/compass_navigation_diagnostic.py
+
+      - name: Commit reproducible package and results
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add optimizations/settlement_compass/benchmarks/AMLD_Compass_Benchmark_001 \
+                  optimizations/settlement_compass/benchmarks/AMLD_Compass_Benchmark_001.zip \
+                  optimizations/settlement_compass/results/
+          if git diff --cached --quiet; then
+            echo 'No generated changes.'
+          else
+            git commit -m 'reproduce settlement compass benchmark and diagnostic results'
+            git push
+          fi
