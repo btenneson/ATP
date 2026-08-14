@@ -24,13 +24,13 @@ The discrete settlement tensor is the companion resource-allocation model. It es
 
 ### Repository contents
 
-- `docs/pdf/AMLD_Compass_Fixed_Point_and_Proof_Ocean_Navigation.pdf` — formal fixed-point, monotonicity, distance-to-settlement, and proof-DAG compass paper.
-- `docs/pdf/DATA_3_AMLD_Settlement_Tensor_Optimization_Expanded_Illustrated.pdf` — illustrated settlement-density/tensor and constrained optimization paper.
-- `docs/latex/` — LaTeX sources for both papers.
-- `figures/` — original figures required by the tensor paper.
-- `benchmarks/AMLD_Compass_Benchmark_001.zip` — frozen first benchmark package: 10 training proof DAGs, 49 downstream theorem targets, and one hidden Infinity target under the deliberately weakened no-Infinity base.
+- `docs/pdf/AMLD_Compass_Fixed_Point_and_Proof_Ocean_Navigation.pdf` — formal fixed-point, monotonicity, distance-to-settlement, and proof-DAG compass paper, generated from LaTeX.
+- `docs/pdf/DATA_3_AMLD_Settlement_Tensor_Optimization_Expanded_Illustrated.pdf` — illustrated settlement-density/tensor and constrained optimization paper, generated from LaTeX.
+- `docs/latex/` — canonical LaTeX sources for both papers.
 - `THEORY.md` — compact formal specification of the strategy.
-- `BENCHMARK_001.md` — benchmark protocol and anti-leakage rules.
+- `BENCHMARK_001.md` — frozen benchmark protocol for 10 training DAGs, 49 downstream theorem targets, and one hidden Infinity target under the deliberately weakened no-Infinity base.
+
+The PDF files are built and committed by `.github/workflows/settlement-compass-docs.yml`. The first benchmark's binary fixture package is retained separately from this source folder; the GitHub protocol document is the authoritative description until that fixture package is imported into the repository.
 
 ### Current research objective
 
