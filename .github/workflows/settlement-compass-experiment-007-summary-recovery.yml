@@ -1,0 +1,39 @@
+name: Settlement Compass Experiment 007 Summary Recovery
+
+on:
+  push:
+    paths:
+      - 'optimizations/settlement_compass/src/summarize_experiment_007_changed_test20.py'
+      - '.github/workflows/settlement-compass-experiment-007-summary-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  summarize-only:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install NumPy only
+        run: python -m pip install --upgrade pip numpy
+      - name: Summarize committed Experiment 007 raw results
+        run: python optimizations/settlement_compass/src/summarize_experiment_007_changed_test20.py
+      - name: Commit recovered summary
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add optimizations/settlement_compass/results/experiment_007_changed_test20_summary.json
+          git add optimizations/settlement_compass/results/experiment_007_protocol_check.json
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+          else
+            git commit -m 'recover changed-test20 summary without retraining'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
