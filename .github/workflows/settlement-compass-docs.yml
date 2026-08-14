@@ -1,0 +1,46 @@
+name: Build settlement compass documents
+
+on:
+  push:
+    paths:
+      - 'optimizations/settlement_compass/docs/latex/**'
+      - '.github/workflows/settlement-compass-docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install LaTeX
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-latex-base texlive-latex-extra texlive-fonts-recommended
+      - name: Compile compass and tensor papers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd optimizations/settlement_compass/docs/latex
+          pdflatex -interaction=nonstopmode -halt-on-error AMLD_Compass_Fixed_Point_and_Proof_Ocean_Navigation.tex
+          pdflatex -interaction=nonstopmode -halt-on-error AMLD_Compass_Fixed_Point_and_Proof_Ocean_Navigation.tex
+          pdflatex -interaction=nonstopmode -halt-on-error DATA_3_AMLD_Settlement_Tensor_Optimization_Expanded_Illustrated.tex
+          pdflatex -interaction=nonstopmode -halt-on-error DATA_3_AMLD_Settlement_Tensor_Optimization_Expanded_Illustrated.tex
+          mkdir -p ../pdf
+          cp AMLD_Compass_Fixed_Point_and_Proof_Ocean_Navigation.pdf ../pdf/
+          cp DATA_3_AMLD_Settlement_Tensor_Optimization_Expanded_Illustrated.pdf ../pdf/
+      - name: Commit generated PDFs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add optimizations/settlement_compass/docs/pdf
+          if git diff --cached --quiet; then
+            echo 'No PDF changes.'
+          else
+            git commit -m 'build settlement compass PDFs'
+            git push
+          fi
