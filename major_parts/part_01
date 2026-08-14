@@ -1,0 +1,75 @@
+P versus NP has a different obstruction.  The July paper observes that the statement is not even natively expressible in its then-current \texttt{set.mm} environment without first introducing a machine model, time bounds, and complexity classes.  More deeply, lower-bound routes encounter the familiar proof-complexity problem: counting does not constrain one distinguished statement; the Proof Horizon bounds a search machine once proof length is fixed but does not lower-bound that proof length; and relativization/natural-proofs/algebrization barriers restrict proof content without yielding a line-count lower bound.  The paper therefore identifies proof complexity, rather than search cleverness alone, as the main obstruction to converting its search theory into a P-vs.-NP result.
+
+This difference is important: Hodge is currently bottlenecked heavily by exact mathematical formalization and by moving up a domain-specific dependency ladder; P versus NP, in the July analysis, is bottlenecked by the lack of strong proof-length lower bounds in proof systems powerful enough to reach the target.
+
+\section{Techniques that appear to work for both programs}
+
+Here ``works'' is deliberately modest.  It means that the technique has a proved property, a verified operational role, or reproducible experimental support in the search program.  It does \emph{not} mean that it settles either Millennium problem.
+
+\subsection{A small trusted verification boundary}
+
+The clearest success is the separation between an adventurous searcher and a conservative checker.  In the P-vs.-NP paper, the Metamath certificate verifier reproduced the accepted status of all 47,572 proofs in its corpus snapshot.  The four certificates emitted by Predator 7.1 also verified, and that same verifier exposed the crucial scientific embarrassment: the four ``proofs'' were merely one-step citations of earlier equivalent statements.  The checker was therefore useful not only for soundness but for diagnosing what the searcher had actually accomplished.
+
+The Hodge program uses the same principle at a different formalization layer.  Learned scores, self-descriptions, quotients, fixed-point interpretations, or physics-motivated ideas may influence where computation goes, but logical status changes only when the declared checker accepts a certificate.  The Hodge ladder's six banked H0/H1/H2 prerequisites are meaningful precisely because they are verifier-backed rather than heuristic milestones.
+
+\textbf{Verdict: works for both.}  This is the most mature technique in the pair of papers.
+
+\subsection{Persistent verified banks and conservative reuse}
+
+The July paper's settlement machine runs two branches, one pursuing \(c\) and one pursuing \(\neg c\), over a shared lemma store.  Its Theorem 11.1 identifies cross-branch insertion with conservative compilation: a closed lemma can be turned into a derived rule available at unit retrieval cost without changing theoremhood.  The theorem also makes an important negative point: \(\kuse=0\) forces zero cross-branch settlement dividend, while \(\kuse>0\) is necessary but not sufficient for a positive dividend.
+
+The Hodge paper uses a typed verified bank to accumulate prerequisites across rungs.  This is already operationally valuable even before a global speedup is known: once exterior-algebra, Riemannian, metric/orientation, and complement-map infrastructure is verified, later H2 work can use those objects as certified landmarks rather than re-establishing them from scratch.
+
+\textbf{Verdict: works for both as certified reuse/compression infrastructure.}  A general end-to-end speedup is not yet established.
+
+\subsection{Proof/search cost separation and incumbent reasoning}
+
+Both programs improve when they stop treating ``proof length'', ``search work'', and ``time'' as interchangeable.  The P-vs.-NP line explicitly distinguishes transaction depth from materializations.  On its condensed-detachment testbed, one learned policy reduced materializations by a factor about 2.14 while yielding a measured 1.76-fold wall-clock speedup; another method reduced nodes far more aggressively but cost so much per node that it became 2.5 times slower.  This is a direct demonstration that a heuristic must beat its own overhead.
+
+The Hodge paper applies the same discipline to reflection.  If obtaining, checking, retrieving, and using a self-theorem costs \(c\), while it certifiably removes \(N\) regions that would each cost at least \(L\), the reflective route is profitable when
+\[
+ c < NL.
+\]
+The point is not the elementary inequality; it is the insistence that reflection pay rent in the same declared cost metric as the search it claims to remove.
+
+\textbf{Verdict: works for both as a method of preventing fictitious speedups.}
+
+\subsection{Exact reduction before heuristic navigation}
+
+The two programs increasingly converge on a reduction-first philosophy.  Certified lemmas can become macro edges.  Verified equivalences can support quotienting.  A valid incumbent upper bound \(B\), exact spent cost \(g(v)\), and admissible lower bound \(h(v)\) justify pruning whenever
+\[
+ g(v)+h(v)\ge B.
+\]
+The Hodge paper explicitly applies these ideas to sub-rungs: symmetry-related basis states, equivalent encodings, repeated prerequisite packages, and branches unable to improve an incumbent are potential candidates for certified collapse or pruning.  In the P-vs.-NP line, conservative compilation and shortest-proof/horizon analysis supply the analogous mechanism for reducing repeated work without pretending that the native theorem suddenly has a shorter proof.
+
+\textbf{Verdict: mathematically sound for both when its hypotheses are actually certified.}  The unresolved question is how much reduction is available on the hard instances.
+
+\subsection{Decomposition into ladders, rungs, or accessible neighbours}
+
+The Hodge manuscript's H0--H8 ladder and the P-vs.-NP manuscript's proof-system ladder serve the same strategic purpose: replace one opaque global target with a sequence of local statements that can be verified, refuted, or measured.  In Hodge this produced concrete H2 progress.  In P versus NP it clarifies that resolution and bounded-depth Frege lower bounds are known while Frege, Extended Frege, and the universal proof-system level remain open.  The ladder does not solve the final conjecture, but it makes the location of the obstruction explicit.
+
+\textbf{Verdict: works for both as research decomposition and experimental curriculum.}
+
+\section{Techniques with evidence for at least one program}
+
+\begin{longtable}{@{}p{0.27\textwidth}p{0.19\textwidth}p{0.46\textwidth}@{}}
+\caption{Techniques whose positive evidence is currently asymmetric.}\\
+\toprule
+Technique & Evidence strongest in & What is actually supported \\
+\midrule
+\endfirsthead
+\toprule
+Technique & Evidence strongest in & What is actually supported \\
+\midrule
+\endhead
+Operational reflective self-pruning & Hodge, 13 Aug. & The Hodge paper proves an existential Reflective Search Improvement theorem: a meta-ATP can prove a verifier-checkable fact about a frozen source search and a declared controller can use that fact to remove search while leaving object-theory certificate semantics unchanged.  The gain can be arbitrarily large on an explicit finite-decoy family. \\
+\addlinespace
+Semigroup-compatible quotients & Hodge & If active maps generate a transformation semigroup, a useful search equivalence should behave as a congruence under future actions and preserve settlement classes.  This gives a mathematically coherent criterion for quotienting DATA states.  No corresponding P-vs.-NP empirical gain is reported in the July paper. \\
+\addlinespace
+Learned search ordering & P-vs.-NP / Predator line & The condensed-detachment Predator 5 experiment reports about 2.14-fold fewer materializations and 1.76-fold wall-clock speedup for a low-overhead learned reordering policy.  This is real but toy-fragment evidence, not P-vs.-NP evidence. \\
+\addlinespace
+Hodge-specific prerequisite formalization & Hodge & Six verifier-backed H0/H1/H2 bank nodes were present by the 12 August snapshot, with the signed basis Hodge-star formula next.  This is genuine formalization progress but still far below the general Hodge statement. \\
+\addlinespace
+Proof-complexity barrier analysis & P vs. NP & The July paper productively rules out naive lower-bound routes and identifies the missing object: a genuine lower bound on strong proof systems.  This is diagnostic mathematical progress, not a P-vs.-NP settlement. \\
+\addlinespace
+Definitional floor & P vs. NP & Because the July \texttt{set.mm} snapshot lacked a machine model, time bounds, and complexity classes, the paper obtains a soft lower bound on what must be added before the target can even be expressed and manipulated.  This is a valid lower floor, but far from a complexity-theoretic lower bound. \\
