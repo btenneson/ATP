@@ -1,0 +1,75 @@
+\bottomrule
+\end{longtable}
+
+\section{Promising-sounding techniques that, as far as these data show, work for neither main conjecture}
+
+\subsection{Static learned ``compass'' scores as a complete controller}
+
+This is the sharpest negative experimental result available after both papers.  In the 14 August settlement-compass Experiment 004, more true proof-DAG training improved held-out navigation statistics: global AUC rose from 0.8353 at 10 training roots to roughly 0.888 by 80--160 roots, while the oversized 3,612-root condition improved precision@10 to 0.670 and reduced median direct-parent rank to 57.  Those numbers look encouraging.
+
+Experiment 005 then exposed the missing step.  At the 160-DAG shell, the learned trajectory diagnostics could show positive aggregate progress statistics while the executed retrospective controller settled \emph{0 of 100} trajectories because it repeatedly selected distractor/off-DAG successors.  Therefore static ranking quality, AUC, Spearman correlation, or top-k accuracy cannot by themselves be treated as evidence of a successful conjecture-settling controller.
+
+\textbf{Status for Hodge and P vs. NP: promising navigation component, not demonstrated end-to-end solution method.}
+
+\subsection{Continuous/fractional iteration, Abel or Schröder coordinates, and global IFS embeddings}
+
+The Hodge paper gives a clean retrospective observation: along a settling orbit one can define an exact remaining-time coordinate and hence an Abel-type relation.  But computing that coordinate prospectively may be as difficult as solving the remaining search.  The manuscript itself therefore classifies continuous semigroups, fractional iterates, Schröder coordinates, infinitesimal generators, and flow-informed scheduling as optional experimental layers rather than soundness assumptions.
+
+\textbf{Status: mathematically suggestive, no demonstrated Hodge or P-vs.-NP settlement gain.}
+
+\subsection{Self-awareness by itself}
+
+The 13 August Hodge result is easy to overstate.  What helps in the theorem is not the label ``self-aware''; it is a \emph{specific, verified operational theorem} about the current search that licenses a safe pruning or quotient operation.  The Hodge paper explicitly states that Level-1 or Level-\(\omega\) self-awareness alone does not imply speedup.
+
+\textbf{Status: reflection without a useful verified control consequence works for neither problem as far as is known.}
+
+\subsection{Hilbert space-filling ordering and geometric search ordering}
+
+Hilbert ordering belongs to the broader theorem-search program, but the comparison papers provide no controlled evidence that it materially advances either Hodge or P versus NP.  A fair or exhaustive ordering can have completeness value without having practical hitting-time value.  Later maze work appropriately places Hilbert ordering after exact quotients, bounds, and compilation in the experimental priority.
+
+\textbf{Status: interesting heuristic, not demonstrated on either main conjecture.}
+
+\subsection{Min-plus/tropical path algebra}
+
+Min-plus language elegantly expresses ``sum costs along a route; take the minimum over alternative routes.''  This is structurally appropriate for weighted theorem mazes, but an algebraic restatement does not itself reduce the implicit state explosion.
+
+\textbf{Status: useful formal language, no demonstrated settlement gain for either conjecture.}
+
+\subsection{Naive counting as a P-vs.-NP proof-length lower bound}
+
+The July paper itself gives the correct negative result.  Counting can show that most statements must have long proofs, but P versus NP is one distinguished statement and can always be the exceptional short one.  Thus the approach sounds like a natural way to prove a long settlement horizon but does not provide the needed lower bound.
+
+\textbf{Status: fails for P versus NP; has no useful analogue for settling Hodge here.}
+
+\section{New answer to Section 13 of the July paper}
+
+Section 13 asks for the number that the paper did not yet have: measure \(\kuse\) for a real policy on a real corpus.  On 14 August 2026, a pilot implementation was added to the public ATP repository and run under GitHub Actions against the then-current development copy of \texttt{set.mm}.
+
+The protocol follows the paper's central requirements: one shared chronological index, two goal frontiers for \(c\) and \(\neg c\), alternating expansions, branch-local substitutions, a shared store for closed lemmas, and origin/use logging.  It additionally filters targets for which either side has a direct one-step closer, reducing the duplicate-lookup contamination exposed by the July paper.
+
+\begin{table}[H]
+\centering
+\caption{First Section-13 pilot.  This is a small descriptive run, not a corpus estimate.}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Target & Stages & \(|\Lambda|\) & use-crossed & \(\kuse\) & \(\kav\) & Settled \\
+\midrule
+\texttt{notnoti} & 1500 & 118 & 32 & 0.271186 & 1.000 & no \\
+\texttt{pm2.01i} & 1500 & 209 & 50 & 0.239234 & 1.000 & no \\
+\midrule
+Pooled & 3000 & 327 & 82 & \textbf{0.250765} & \textbf{1.000} & 0/2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+So the first empirical answer is not \(\kuse=0\).  For this pilot controller and these two filtered early-corpus targets,
+\[
+\boxed{\kuse=\frac{82}{327}\approx0.2508.}
+\]
+Every deposited lemma eventually became cross-available in this tiny run, hence \(\kav=1\).  The useful interpretation is narrow: the ``other'' branch is demonstrably capable of manufacturing lemmas that cross the branch boundary under this policy.  The result does \emph{not} yet show a positive settlement dividend because neither target settled within budget.  Theorem 11.1's logical direction remains exactly the right caution: nonzero use-crossing is necessary for reuse speedup, not sufficient.
+
+Three limitations keep this result at pilot status.  First, the controller is modeled on the documented Predator 7.1 search shape rather than being a byte-identical replay of the historical executable.  Second, dynamically deposited derived lemmas have not yet been exported and independently replayed one-by-one as standalone Metamath certificates, even though they are built from verifier-backed source assertions.  Third, two targets are far too few for a corpus-wide estimate.  The next decisive experiment is a frozen target set run twice under identical budgets: shared bank ON versus OFF, with every deposited lemma independently certificate-checked.  That experiment would estimate both \(\kuse\) and the actual settlement dividend \(\Delta(c)\).
+
+\section{Cross-problem technique matrix}
+
+\begin{table}[H]
