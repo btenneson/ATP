@@ -1,0 +1,37 @@
+name: Build Major Conjectures PDF
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/major-conjectures-build.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Assemble LaTeX source
+        run: |
+          cat major_parts/part_00 major_parts/part_01 major_parts/part_02 major_parts/part_03 > major_conjectures.v01.tex
+
+      - name: Compile PDF
+        uses: xu-cheng/latex-action@v4
+        with:
+          root_file: major_conjectures.v01.tex
+          latexmk_use_xelatex: false
+
+      - name: Commit source and PDF
+        run: |
+          rm -rf major_parts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A major_conjectures.v01.tex major_conjectures.v01.pdf major_parts
+          git commit -m "Add major conjectures comparison source and PDF"
+          git push
