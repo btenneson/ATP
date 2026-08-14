@@ -1,0 +1,67 @@
+{
+  "database": "set.mm",
+  "elapsed_seconds": 13.253,
+  "limitations": [
+    "dynamic derived lemmas are not yet exported and replayed as standalone Metamath certificates",
+    "search controller is a Section-13 pilot modeled on Predator_7.1, not the historical predator71.py binary",
+    "only negative theorems surviving a direct-one-step closer filter are measured"
+  ],
+  "pooled_kappa_av": 1.0,
+  "pooled_kappa_av_nontrivial": 1.0,
+  "pooled_kappa_us": 0.25076452599388377,
+  "pooled_kappa_us_nontrivial": 1.0,
+  "protocol": "Section 13 alternating two-branch backward search with branch-local substitutions",
+  "rows": [
+    {
+      "A_expansions": 750,
+      "B_expansions": 750,
+      "available_crossed": 118,
+      "base_assertions": 141,
+      "human_logic_steps": 2,
+      "kappa_av": 1.0,
+      "kappa_av_nontrivial": 1.0,
+      "kappa_us": 0.2711864406779661,
+      "kappa_us_nontrivial": 1.0,
+      "label": "notnoti",
+      "lambda_nontrivial": 32,
+      "lambda_size": 118,
+      "stages": 1500,
+      "use_crossed": 32,
+      "winner": "none"
+    },
+    {
+      "A_expansions": 750,
+      "B_expansions": 750,
+      "available_crossed": 209,
+      "base_assertions": 188,
+      "human_logic_steps": 2,
+      "kappa_av": 1.0,
+      "kappa_av_nontrivial": 1.0,
+      "kappa_us": 0.23923444976076555,
+      "kappa_us_nontrivial": 1.0,
+      "label": "pm2.01i",
+      "lambda_nontrivial": 50,
+      "lambda_size": 209,
+      "stages": 1500,
+      "use_crossed": 50,
+      "winner": "none"
+    }
+  ],
+  "search": {
+    "max_depth": 6,
+    "max_logic": 5,
+    "max_open": 5,
+    "min_logic": 2,
+    "opener_cap": 12,
+    "scan": 5000,
+    "stage_budget": 1500
+  },
+  "settled": 0,
+  "status": "pilot",
+  "targets_measured": 2,
+  "targets_requested": 2,
+  "total_available_crossed": 327,
+  "total_nontrivial_shared_lemmas": 82,
+  "total_shared_lemmas": 327,
+  "total_use_crossed": 82
+}

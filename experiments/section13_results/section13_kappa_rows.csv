@@ -1,0 +1,3 @@
+label,human_logic_steps,base_assertions,stages,winner,A_expansions,B_expansions,lambda_size,lambda_nontrivial,available_crossed,use_crossed,kappa_av,kappa_us,kappa_av_nontrivial,kappa_us_nontrivial
+notnoti,2,141,1500,none,750,750,118,32,118,32,1.0,0.2711864406779661,1.0,1.0
+pm2.01i,2,188,1500,none,750,750,209,50,209,50,1.0,0.23923444976076555,1.0,1.0
