@@ -1,0 +1,75 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\hypersetup{colorlinks=true,linkcolor=NavyBlue,citecolor=NavyBlue,urlcolor=NavyBlue,pdftitle={Major Conjectures Under Verifier-Gated Search},pdfauthor={Comparative research note based on the cited Tenneson manuscripts}}
+\setlist{nosep,leftmargin=1.5em}
+\setlength{\parskip}{0.55em}
+\setlength{\parindent}{0pt}
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Major Conjectures: Hodge and P vs. NP}
+\rhead{v0.1 -- 14 August 2026}
+\cfoot{\thepage}
+\titleformat{\section}{\Large\bfseries\color{NavyBlue}}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\large\bfseries\color{NavyBlue}}{\thesubsection}{0.5em}{}
+\newcommand{\kuse}{\kappa_{\mathrm{us}}}
+\newcommand{\kav}{\kappa_{\mathrm{av}}}
+\newcommand{\UNKNOWN}{\textsc{unknown}}
+\newcommand{\yes}{\textbf{yes}}
+\newcommand{\no}{\textbf{no}}
+\newcommand{\partialyes}{\textbf{partial}}
+
+\title{\textbf{Major Conjectures Under Verifier-Gated Search}\\[0.3em]
+\large A dated comparison of the Hodge-conjecture and P-vs.-NP research programs}
+\author{Comparative research note based on the cited Tenneson manuscripts}
+\date{14 August 2026 -- version 0.1}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note compares two manuscripts that belong to the same automated-conjecture-settlement research program but were written at materially different moments.  The earlier paper, \emph{Predator 7.1 Documentation and Cross-Branch Reuse Rate Theory, with efforts toward lower bounds on the settlement length of P vs NP}, is a July 2026 Revision 2 manuscript.  The later paper, \emph{The Hodge Ladder, DATA 3.0, and Reflective Search}, is dated 13 August 2026 at 16:20 PDT and explicitly separates what was known through 12 August from new reflective-search theorems of 13 August.  That chronology matters: techniques proved or tested in mid-August must not be retroactively credited to the July P-vs.-NP paper.
+
+The strongest common lesson is not that either Millennium problem has been solved.  Neither has.  The strongest common lesson is that exact verification, reusable certified lemmas, conservative compilation, explicit proof/search cost accounting, and structural reduction of the search space are the parts of the program that have the clearest mathematical or empirical footing.  Learned navigation can help, but later experiments show that a good static compass can still fail completely as a closed-loop controller.  Reflection can provably remove search on explicit families, but the Hodge manuscript itself correctly reports that its cumulative compression has not yet been measured.
+
+A new 14 August 2026 pilot was also run specifically to answer Section 13 of the July paper.  On two filtered real \texttt{set.mm} targets, the pooled cross-branch use rate was \(\kuse=82/327\approx0.2508\), with \(\kav=1\).  This is evidence that cross-branch reuse need not be zero for the tested policy, but neither target settled inside the deliberately small 1,500-stage budget, so no settlement-speedup claim follows.
+\end{abstract}
+
+\section{Chronology first}
+
+The dates impose a one-way dependency.  The P-vs.-NP manuscript is a July 2026 document.  Its main new internal results concern Predator 7.1 verification, the settlement machine, cross-branch reuse, online conservative compilation, chain deficits, and the difficulty of obtaining a genuine lower bound on the shortest proof of P versus NP.  The Hodge synthesis is dated 13 August 2026 and explicitly incorporates a substantially richer architecture: DATA 3.0, ALD/AMLD, theorem mazes, Proof-Horizon machinery, semigroup/IFS language, and---new on 13 August---a theorem showing that verifier-backed operational self-knowledge can strictly reduce search on an explicit family.
+
+A third manuscript, the 14 August 2026 \emph{Discovery Addendum} to \emph{From Search Dynamics to Semi-Ideal Computers}, is later than both comparison papers.  Its settlement-compass experiments are therefore used here only as a \emph{postscript test of techniques}, not as evidence available to either earlier manuscript at its stated date.
+
+There is also a concrete corpus-date warning.  The July P-vs.-NP paper reports 47,572 \texttt{set.mm} theorems in the corpus it verified.  The Section-13 pilot run on 14 August downloaded the current development version and parsed 47,672 theorems.  Results from those snapshots should not be combined as though the database were frozen.
+
+\begin{table}[H]
+\centering
+\caption{The three dated evidence layers used in this comparison.}
+\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.25\textwidth}X@{}}
+\toprule
+Date & Document / experiment & Proper role in the comparison \\
+\midrule
+July 2026 & P-vs.-NP / Predator 7.1, Revision 2 & Earlier baseline: verifier, cross-branch reuse theory, proof-horizon limits, proof-complexity obstacles. \\
+13 Aug. 2026, 16:20 PDT & Hodge / DATA 3.0 reflective synthesis & Later Hodge-specific ladder plus same-day reflective-search improvement theorem and self-pruning consequences. \\
+14 Aug. 2026 & Search-dynamics v0.3 experiments and new Section-13 pilot & Later experimental postscript; useful for judging techniques, but not part of the historical evidence of the two earlier papers. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{What the two target problems demand}
+
+The mathematical objects are very different.  The Hodge conjecture asks whether every rational Hodge class of type \((p,p)\) on a smooth projective complex variety is a rational linear combination of algebraic-cycle classes.  The Hodge manuscript therefore faces a formidable \emph{formalization and representation} problem before global proof search is meaningful.  Its H0--H8 ladder is a project-specific dependency curriculum, not standard Hodge nomenclature.  At the 12 August boundary, H0 and H1 were verified substrates and work was inside H2, with six verified bank nodes and the finite basis-level Hodge-star bridge at the frontier.
+
