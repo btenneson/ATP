@@ -1,0 +1,65 @@
+\centering
+\small
+\caption{Current status as of 14 August 2026.  ``Works'' means locally supported, not Millennium-problem settlement.}
+\begin{tabularx}{\textwidth}{@{}Xcccc@{}}
+\toprule
+Technique & Hodge & P vs. NP & Direct experiment? & Main-conjecture success? \\
+\midrule
+Independent verifier / certificate gate & \yes & \yes & \yes & \no \\
+Persistent verified lemma bank & \yes & \yes & \partialyes & \no \\
+Conservative compilation / macro reuse & \yes & \yes & \partialyes & \no \\
+Proof/search cost separation & \yes & \yes & \yes & \no \\
+Exact pruning from valid bounds & \partialyes & \partialyes & synthetic / proposed & \no \\
+Verified quotienting & \partialyes & \partialyes & not yet at scale & \no \\
+Problem ladder / prerequisite decomposition & \yes & \yes & operational & \no \\
+Operational reflective self-pruning & theorem + synthetic & not in July paper & synthetic & \no \\
+Learned search ordering & not yet Hodge-proved & toy-fragment \yes & \yes & \no \\
+Static settlement compass & proposed & proposed & \yes, mixed & \no \\
+IFS / fractional iteration / Abel control & proposed & not established & no decisive test & \no \\
+Hilbert ordering & broader program & broader program & no decisive test here & \no \\
+Min-plus path algebra & structural & structural & no speedup test & \no \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{What the comparison suggests doing next}
+
+The evidence favors a conservative ordering of work.
+
+\begin{enumerate}
+\item \textbf{Freeze corpora, targets, budgets, and cost metrics.}  The 47,572-versus-47,672 theorem count already shows why the date and exact \texttt{set.mm} revision must be recorded.
+\item \textbf{Measure exact structural reductions first.}  Canonicalization, quotienting, conservative compilation, verified landmarks, admissible lower bounds, and incumbent pruning should each be ablated separately.
+\item \textbf{Complete the Section-13 experiment.}  Run a larger frozen negative-theorem set under shared-bank ON/OFF conditions, certificate-check every dynamic lemma, and report \(\kav\), \(\kuse\), \(\Delta(c)\), wall time, and materializations.
+\item \textbf{For Hodge, instrument the missing reduction statistic before claiming compression.}  The Hodge paper explicitly says no numerical cumulative \(Q\) product is currently known.  Record the eligible-state denominator before and after every certified prune/quotient and charge reflection overhead.
+\item \textbf{Treat learned navigation as a layer, not an authority.}  The MAX shell data support continued training for local tunneling, but the 0/100 controller result requires successor-robust and closed-loop evaluation before any Hodge/P-vs.-NP extrapolation.
+\item \textbf{Do not expect search engineering to replace proof-complexity mathematics.}  For P versus NP, the July paper's strongest self-criticism remains decisive: without strong lower bounds in sufficiently strong proof systems, a search speedup or proof-horizon theorem cannot become a P-vs.-NP proof.
+\end{enumerate}
+
+\section{Conclusion}
+
+Read in chronological order, the two papers show a genuine development of method.  The July P-vs.-NP paper is strongest when it is skeptical: it builds a trustworthy verifier, discovers that its apparent four successes are mathematically trivial duplicate lookups, formalizes when cross-branch lemma sharing can help, and identifies proof-complexity lower bounds as the missing bridge to the Clay problem.  The 13 August Hodge paper takes that verifier-gated philosophy into a richer architecture and proves one additional mechanism: bounded operational self-knowledge can, on explicit families, justify safe pruning and strictly reduce search.
+
+The common winning pattern is therefore \emph{certify, reuse, reduce, bound, then navigate}.  The weaker pattern is \emph{learn or reflect first and infer success from attractive diagnostics}.  The later 14 August experiments reinforce that distinction: more training makes a static compass look better, yet a naive controller can still go 0/100; meanwhile the first Section-13 pilot finds a nonzero pooled cross-branch use rate, about 0.2508, but no settlement inside budget.  Those are exactly the kinds of results the program should preserve: positive when warranted, negative when warranted, and explicit about what remains unknown.
+
+Neither paper currently supplies evidence that the Hodge conjecture or P versus NP is close to settlement.  Both do, however, support a common research strategy in which mathematical truth remains verifier-gated while increasingly sophisticated machinery is allowed to compete over where the next unit of computation should be spent.
+
+\begin{thebibliography}{99}
+\bibitem{PvsNP}
+B. Tenneson, \emph{Predator 7.1 Documentation and Cross-Branch Reuse Rate Theory, with efforts toward lower bounds on the settlement length of P vs NP}, Revision 2, July 2026.
+
+\bibitem{Hodge}
+B. Tenneson, \emph{The Hodge Ladder, DATA 3.0, and Reflective Search: What was known through 12 August 2026, and the self-aware search theorems of 13 August 2026}, working research synthesis, 13 August 2026, 16:20 PDT.
+
+\bibitem{SearchDynamics}
+B. Tenneson, \emph{From Search Dynamics to Semi-Ideal Computers: Cumulative Verified Histories, Rationally Weighted Theorem Mazes, Reflective ATPs, and Discovery}, Discovery Addendum, Version 0.3, 14 August 2026.
+
+\bibitem{Section13Repo}
+Section-13 pilot implementation and results, \texttt{btenneson/ATP}, 14 August 2026.\\
+\url{https://github.com/btenneson/ATP/tree/main/experiments/section13_results}
+
+\bibitem{ATPRepo}
+B. Tenneson, public ATP research repository.\\
+\url{https://github.com/btenneson/ATP}
+\end{thebibliography}
+
+\end{document}
