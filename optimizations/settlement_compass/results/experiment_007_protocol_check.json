@@ -1,0 +1,21 @@
+{
+  "all_four_raw_shells_completed": true,
+  "cohort_A_is_exact_experiment004_test20": true,
+  "cohort_B_is_disjoint_new20": true,
+  "experiment": 7,
+  "joint_test40_has_40_unique_targets": true,
+  "note": "The original run completed all model fits and row outputs, then failed only while writing its convenience summary. This recovery derives the summary from those committed raw rows and performs no model fitting.",
+  "raw_n_test_each_shell": [
+    40,
+    40,
+    40,
+    40
+  ],
+  "recovery_only_no_retraining": true,
+  "shells": [
+    "320",
+    "640",
+    "1280",
+    "2560"
+  ]
+}
