@@ -39,6 +39,12 @@ jobs:
           cd optimizations/settlement_compass/benchmarks
           zip -qr AMLD_Compass_Benchmark_001.zip AMLD_Compass_Benchmark_001
 
+      - name: Package LaTeX and figure sources inside settlement compass folder
+        run: |
+          cd optimizations/settlement_compass
+          rm -f docs/Settlement_Compass_LaTeX_Source_Package.zip
+          zip -qr docs/Settlement_Compass_LaTeX_Source_Package.zip docs/latex figures
+
       - name: Run first learned-compass navigation diagnostic
         env:
           SETMM_PATH: /tmp/set.mm
@@ -48,16 +54,17 @@ jobs:
           mkdir -p optimizations/settlement_compass/results
           python optimizations/settlement_compass/src/compass_navigation_diagnostic.py
 
-      - name: Commit reproducible package and results
+      - name: Commit reproducible packages and results
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add optimizations/settlement_compass/benchmarks/AMLD_Compass_Benchmark_001 \
                   optimizations/settlement_compass/benchmarks/AMLD_Compass_Benchmark_001.zip \
+                  optimizations/settlement_compass/docs/Settlement_Compass_LaTeX_Source_Package.zip \
                   optimizations/settlement_compass/results/
           if git diff --cached --quiet; then
             echo 'No generated changes.'
           else
-            git commit -m 'reproduce settlement compass benchmark and diagnostic results'
+            git commit -m 'reproduce settlement compass packages and diagnostic results'
             git push
           fi
