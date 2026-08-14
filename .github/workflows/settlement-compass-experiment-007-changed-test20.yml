@@ -1,0 +1,125 @@
+name: Settlement Compass Experiment 007 Changed Test20
+
+on:
+  push:
+    paths:
+      - 'optimizations/settlement_compass/src/run_experiment_007_changed_test20.py'
+      - '.github/workflows/settlement-compass-experiment-007-changed-test20.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  changed-test20:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip scikit-learn scipy numpy
+
+      - name: Fetch exact frozen set.mm snapshot
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/metamath/set.mm/7ddd528c948ae375618ad1ca476b28b9a0eec7d6/set.mm -o /tmp/set.mm
+          actual="$(sha256sum /tmp/set.mm | awk '{print $1}')"
+          expected="7b70cd8cca88aeb72a8dd97029d0b506015fb0325afec581cdc9add8ca0c8547"
+          echo "set.mm sha256=$actual"
+          test "$actual" = "$expected"
+
+      - name: Run Experiment 007 changed test20
+        env:
+          SETMM_PATH: /tmp/set.mm
+          COMPASS_RESULTS_DIR: optimizations/settlement_compass/results
+        run: |
+          set -euo pipefail
+          python optimizations/settlement_compass/src/run_experiment_007_changed_test20.py
+
+      - name: Audit A/B sealing and inherited model protocol
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          rdir = Path('optimizations/settlement_compass/results')
+          old = json.loads((rdir / 'experiment_004_manifest.json').read_text())
+          new_path = rdir / 'experiment_007_manifest_full.json'
+          new = json.loads(new_path.read_text())
+          raw = json.loads((rdir / 'experiment_007_changed_test20_raw.json').read_text())
+          summary = json.loads((rdir / 'experiment_007_changed_test20_summary.json').read_text())
+
+          if new['test20'] != old['test20']:
+              raise SystemExit('Cohort A is not the exact Experiment-004 test20')
+          A, B = set(new['test20']), set(new['test20_b'])
+          if len(A) != 20 or len(B) != 20 or A & B:
+              raise SystemExit('A/B test cohorts are not disjoint 20-element sets')
+          if set(new['test_all']) != A | B or len(new['test_all']) != 40:
+              raise SystemExit('Joint sealed test40 is malformed')
+
+          inherited_keys = [
+              'setmm_sha256', 'vectorizer_params', 'classifier_params', 'regressor_params'
+          ]
+          mismatches = [k for k in inherited_keys if new.get(k) != old.get(k)]
+          if mismatches:
+              raise SystemExit(f'Inherited Experiment-004 model protocol mismatch: {mismatches}')
+
+          for k in ['order', 'negative', 'test_candidates', 'model']:
+              if new['seeds'].get(k) != old['seeds'].get(k):
+                  raise SystemExit(f'Inherited seed mismatch: {k}')
+          if new['seeds'].get('test') != old['seeds'].get('test'):
+              raise SystemExit('Cohort-A test seed mismatch')
+
+          shells = [str(a['shell']) for a in raw['aggregates']]
+          if shells != ['320', '640', '1280', '2560']:
+              raise SystemExit(f'Unexpected shell list: {shells}')
+          if any(int(a['n_test']) != 40 for a in raw['aggregates']):
+              raise SystemExit('Raw evaluation did not use all 40 jointly sealed targets')
+          if len(summary['cohort_results']) != 4:
+              raise SystemExit('Missing cohort summaries')
+
+          check = {
+              'experiment': 7,
+              'cohort_A_is_exact_experiment004_test20': True,
+              'cohort_B_is_disjoint_new20': True,
+              'joint_test40_sealed_before_training': True,
+              'inherited_model_protocol_matches_experiment004': True,
+              'shells': shells,
+              'max_training_roots_after_joint40_seal': new['max_n'],
+              'test20_A': new['test20'],
+              'test20_B': new['test20_b'],
+              'setmm_sha256': new['setmm_sha256'],
+              'vocabulary_sha256': new['vocabulary_sha256'],
+              'note': 'Within each shell A and B are evaluated with the same fitted compass.',
+          }
+          (rdir / 'experiment_007_protocol_check.json').write_text(
+              json.dumps(check, indent=2, sort_keys=True) + '\n'
+          )
+          new_path.unlink()
+          print(json.dumps(check, indent=2))
+          PY
+
+      - name: Commit Experiment 007 results
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add optimizations/settlement_compass/results/experiment_007_changed_test20_raw.json || true
+          git add optimizations/settlement_compass/results/experiment_007_changed_test20_rows.csv || true
+          git add optimizations/settlement_compass/results/experiment_007_changed_test20_summary.json || true
+          git add optimizations/settlement_compass/results/experiment_007_protocol_check.json || true
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+          else
+            git commit -m 'record compass changed-test20 experiment'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
