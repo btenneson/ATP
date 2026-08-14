@@ -1,0 +1,123 @@
+name: Settlement Compass Experiment 006 Gap Shells Fixed20
+
+on:
+  push:
+    paths:
+      - 'optimizations/settlement_compass/src/run_experiment_006_gap_shells_fixed20.py'
+      - '.github/workflows/settlement-compass-experiment-006-gap-shells-fixed20.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  gap-shells-fixed20:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip scikit-learn scipy numpy
+
+      - name: Fetch exact frozen set.mm snapshot
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/metamath/set.mm/7ddd528c948ae375618ad1ca476b28b9a0eec7d6/set.mm -o /tmp/set.mm
+          actual="$(sha256sum /tmp/set.mm | awk '{print $1}')"
+          expected="7b70cd8cca88aeb72a8dd97029d0b506015fb0325afec581cdc9add8ca0c8547"
+          echo "set.mm sha256=$actual"
+          test "$actual" = "$expected"
+
+      - name: Run Experiment 006 shells 320 640 1280 2560
+        env:
+          SETMM_PATH: /tmp/set.mm
+          COMPASS_RESULTS_DIR: optimizations/settlement_compass/results
+        run: |
+          set -euo pipefail
+          python optimizations/settlement_compass/src/run_experiment_006_gap_shells_fixed20.py
+
+      - name: Audit frozen protocol against Experiment 004
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          rdir = Path('optimizations/settlement_compass/results')
+          old_path = rdir / 'experiment_004_manifest.json'
+          new_path = rdir / 'experiment_006_manifest_full.json'
+          result_path = rdir / 'experiment_006_gap_shells_fixed20.json'
+          check_path = rdir / 'experiment_006_protocol_check.json'
+
+          old = json.loads(old_path.read_text())
+          new = json.loads(new_path.read_text())
+          res = json.loads(result_path.read_text())
+
+          frozen_keys = [
+              'setmm_sha256',
+              'seeds',
+              'test20',
+              'ordered_training_roots',
+              'max_n',
+              'frozen_negatives',
+              'frozen_test_negatives',
+              'vectorizer_params',
+              'vocabulary_sha256',
+              'vocabulary_size',
+              'classifier_params',
+              'regressor_params',
+          ]
+          mismatches = [k for k in frozen_keys if old.get(k) != new.get(k)]
+          if mismatches:
+              raise SystemExit(f'Frozen Experiment-004 protocol mismatch: {mismatches}')
+
+          shells = [str(a['shell']) for a in res['aggregates']]
+          expected_shells = ['320', '640', '1280', '2560']
+          if shells != expected_shells:
+              raise SystemExit(f'Unexpected completed shell list: {shells}')
+          if res.get('test20') != old.get('test20'):
+              raise SystemExit('Result test20 does not match Experiment 004')
+
+          check = {
+              'experiment': 6,
+              'protocol': 'Fill 160->3612 gap with 320/640/1280/2560 while holding Experiment-004 test20 fixed.',
+              'frozen_against_experiment_004': True,
+              'frozen_keys_checked': frozen_keys,
+              'experiment_004_manifest_sha256': hashlib.sha256(old_path.read_bytes()).hexdigest(),
+              'setmm_sha256': new['setmm_sha256'],
+              'test_n': len(new['test20']),
+              'test20': new['test20'],
+              'vocabulary_sha256': new['vocabulary_sha256'],
+              'max_training_roots': new['max_n'],
+              'shells': expected_shells,
+              'aggregates': res['aggregates'],
+              'note': 'Compass-learning diagnostic only; no claim that this is a learned closed-loop controller.',
+          }
+          check_path.write_text(json.dumps(check, indent=2, sort_keys=True) + '\n')
+          new_path.unlink()
+          print(json.dumps(check, indent=2))
+          PY
+
+      - name: Commit Experiment 006 results
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add optimizations/settlement_compass/results/experiment_006_gap_shells_fixed20.json || true
+          git add optimizations/settlement_compass/results/experiment_006_gap_shells_fixed20_rows.csv || true
+          git add optimizations/settlement_compass/results/experiment_006_protocol_check.json || true
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+          else
+            git commit -m 'record compass gap shells with fixed test20'
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
