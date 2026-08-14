@@ -1,0 +1,290 @@
+\documentclass[11pt]{article}
+\usepackage[letterpaper,margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,tabularx,array,longtable}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+\hypersetup{colorlinks=true,linkcolor=NavyBlue,citecolor=NavyBlue,urlcolor=NavyBlue,pdftitle={Major Conjectures Under Verifier-Gated Search},pdfauthor={Comparative research note based on the cited Tenneson manuscripts}}
+\setlist{nosep,leftmargin=1.5em}
+\setlength{\parskip}{0.55em}
+\setlength{\parindent}{0pt}
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Major Conjectures: Hodge and P vs. NP}
+\rhead{v0.1 -- 14 August 2026}
+\cfoot{\thepage}
+\titleformat{\section}{\Large\bfseries\color{NavyBlue}}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\large\bfseries\color{NavyBlue}}{\thesubsection}{0.5em}{}
+\newcommand{\kuse}{\kappa_{\mathrm{us}}}
+\newcommand{\kav}{\kappa_{\mathrm{av}}}
+\newcommand{\UNKNOWN}{\textsc{unknown}}
+\newcommand{\yes}{\textbf{yes}}
+\newcommand{\no}{\textbf{no}}
+\newcommand{\partialyes}{\textbf{partial}}
+
+\title{\textbf{Major Conjectures Under Verifier-Gated Search}\\[0.3em]
+\large A dated comparison of the Hodge-conjecture and P-vs.-NP research programs}
+\author{Comparative research note based on the cited Tenneson manuscripts}
+\date{14 August 2026 -- version 0.1}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note compares two manuscripts that belong to the same automated-conjecture-settlement research program but were written at materially different moments.  The earlier paper, \emph{Predator 7.1 Documentation and Cross-Branch Reuse Rate Theory, with efforts toward lower bounds on the settlement length of P vs NP}, is a July 2026 Revision 2 manuscript.  The later paper, \emph{The Hodge Ladder, DATA 3.0, and Reflective Search}, is dated 13 August 2026 at 16:20 PDT and explicitly separates what was known through 12 August from new reflective-search theorems of 13 August.  That chronology matters: techniques proved or tested in mid-August must not be retroactively credited to the July P-vs.-NP paper.
+
+The strongest common lesson is not that either Millennium problem has been solved.  Neither has.  The strongest common lesson is that exact verification, reusable certified lemmas, conservative compilation, explicit proof/search cost accounting, and structural reduction of the search space are the parts of the program that have the clearest mathematical or empirical footing.  Learned navigation can help, but later experiments show that a good static compass can still fail completely as a closed-loop controller.  Reflection can provably remove search on explicit families, but the Hodge manuscript itself correctly reports that its cumulative compression has not yet been measured.
+
+A new 14 August 2026 pilot was also run specifically to answer Section 13 of the July paper.  On two filtered real \texttt{set.mm} targets, the pooled cross-branch use rate was \(\kuse=82/327\approx0.2508\), with \(\kav=1\).  This is evidence that cross-branch reuse need not be zero for the tested policy, but neither target settled inside the deliberately small 1,500-stage budget, so no settlement-speedup claim follows.
+\end{abstract}
+
+\section{Chronology first}
+
+The dates impose a one-way dependency.  The P-vs.-NP manuscript is a July 2026 document.  Its main new internal results concern Predator 7.1 verification, the settlement machine, cross-branch reuse, online conservative compilation, chain deficits, and the difficulty of obtaining a genuine lower bound on the shortest proof of P versus NP.  The Hodge synthesis is dated 13 August 2026 and explicitly incorporates a substantially richer architecture: DATA 3.0, ALD/AMLD, theorem mazes, Proof-Horizon machinery, semigroup/IFS language, and---new on 13 August---a theorem showing that verifier-backed operational self-knowledge can strictly reduce search on an explicit family.
+
+A third manuscript, the 14 August 2026 \emph{Discovery Addendum} to \emph{From Search Dynamics to Semi-Ideal Computers}, is later than both comparison papers.  Its settlement-compass experiments are therefore used here only as a \emph{postscript test of techniques}, not as evidence available to either earlier manuscript at its stated date.
+
+There is also a concrete corpus-date warning.  The July P-vs.-NP paper reports 47,572 \texttt{set.mm} theorems in the corpus it verified.  The Section-13 pilot run on 14 August downloaded the current development version and parsed 47,672 theorems.  Results from those snapshots should not be combined as though the database were frozen.
+
+\begin{table}[H]
+\centering
+\caption{The three dated evidence layers used in this comparison.}
+\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.25\textwidth}X@{}}
+\toprule
+Date & Document / experiment & Proper role in the comparison \\
+\midrule
+July 2026 & P-vs.-NP / Predator 7.1, Revision 2 & Earlier baseline: verifier, cross-branch reuse theory, proof-horizon limits, proof-complexity obstacles. \\
+13 Aug. 2026, 16:20 PDT & Hodge / DATA 3.0 reflective synthesis & Later Hodge-specific ladder plus same-day reflective-search improvement theorem and self-pruning consequences. \\
+14 Aug. 2026 & Search-dynamics v0.3 experiments and new Section-13 pilot & Later experimental postscript; useful for judging techniques, but not part of the historical evidence of the two earlier papers. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{What the two target problems demand}
+
+The mathematical objects are very different.  The Hodge conjecture asks whether every rational Hodge class of type \((p,p)\) on a smooth projective complex variety is a rational linear combination of algebraic-cycle classes.  The Hodge manuscript therefore faces a formidable \emph{formalization and representation} problem before global proof search is meaningful.  Its H0--H8 ladder is a project-specific dependency curriculum, not standard Hodge nomenclature.  At the 12 August boundary, H0 and H1 were verified substrates and work was inside H2, with six verified bank nodes and the finite basis-level Hodge-star bridge at the frontier.
+
+P versus NP has a different obstruction.  The July paper observes that the statement is not even natively expressible in its then-current \texttt{set.mm} environment without first introducing a machine model, time bounds, and complexity classes.  More deeply, lower-bound routes encounter the familiar proof-complexity problem: counting does not constrain one distinguished statement; the Proof Horizon bounds a search machine once proof length is fixed but does not lower-bound that proof length; and relativization/natural-proofs/algebrization barriers restrict proof content without yielding a line-count lower bound.  The paper therefore identifies proof complexity, rather than search cleverness alone, as the main obstruction to converting its search theory into a P-vs.-NP result.
+
+This difference is important: Hodge is currently bottlenecked heavily by exact mathematical formalization and by moving up a domain-specific dependency ladder; P versus NP, in the July analysis, is bottlenecked by the lack of strong proof-length lower bounds in proof systems powerful enough to reach the target.
+
+\section{Techniques that appear to work for both programs}
+
+Here ``works'' is deliberately modest.  It means that the technique has a proved property, a verified operational role, or reproducible experimental support in the search program.  It does \emph{not} mean that it settles either Millennium problem.
+
+\subsection{A small trusted verification boundary}
+
+The clearest success is the separation between an adventurous searcher and a conservative checker.  In the P-vs.-NP paper, the Metamath certificate verifier reproduced the accepted status of all 47,572 proofs in its corpus snapshot.  The four certificates emitted by Predator 7.1 also verified, and that same verifier exposed the crucial scientific embarrassment: the four ``proofs'' were merely one-step citations of earlier equivalent statements.  The checker was therefore useful not only for soundness but for diagnosing what the searcher had actually accomplished.
+
+The Hodge program uses the same principle at a different formalization layer.  Learned scores, self-descriptions, quotients, fixed-point interpretations, or physics-motivated ideas may influence where computation goes, but logical status changes only when the declared checker accepts a certificate.  The Hodge ladder's six banked H0/H1/H2 prerequisites are meaningful precisely because they are verifier-backed rather than heuristic milestones.
+
+\textbf{Verdict: works for both.}  This is the most mature technique in the pair of papers.
+
+\subsection{Persistent verified banks and conservative reuse}
+
+The July paper's settlement machine runs two branches, one pursuing \(c\) and one pursuing \(\neg c\), over a shared lemma store.  Its Theorem 11.1 identifies cross-branch insertion with conservative compilation: a closed lemma can be turned into a derived rule available at unit retrieval cost without changing theoremhood.  The theorem also makes an important negative point: \(\kuse=0\) forces zero cross-branch settlement dividend, while \(\kuse>0\) is necessary but not sufficient for a positive dividend.
+
+The Hodge paper uses a typed verified bank to accumulate prerequisites across rungs.  This is already operationally valuable even before a global speedup is known: once exterior-algebra, Riemannian, metric/orientation, and complement-map infrastructure is verified, later H2 work can use those objects as certified landmarks rather than re-establishing them from scratch.
+
+\textbf{Verdict: works for both as certified reuse/compression infrastructure.}  A general end-to-end speedup is not yet established.
+
+\subsection{Proof/search cost separation and incumbent reasoning}
+
+Both programs improve when they stop treating ``proof length'', ``search work'', and ``time'' as interchangeable.  The P-vs.-NP line explicitly distinguishes transaction depth from materializations.  On its condensed-detachment testbed, one learned policy reduced materializations by a factor about 2.14 while yielding a measured 1.76-fold wall-clock speedup; another method reduced nodes far more aggressively but cost so much per node that it became 2.5 times slower.  This is a direct demonstration that a heuristic must beat its own overhead.
+
+The Hodge paper applies the same discipline to reflection.  If obtaining, checking, retrieving, and using a self-theorem costs \(c\), while it certifiably removes \(N\) regions that would each cost at least \(L\), the reflective route is profitable when
+\[
+ c < NL.
+\]
+The point is not the elementary inequality; it is the insistence that reflection pay rent in the same declared cost metric as the search it claims to remove.
+
+\textbf{Verdict: works for both as a method of preventing fictitious speedups.}
+
+\subsection{Exact reduction before heuristic navigation}
+
+The two programs increasingly converge on a reduction-first philosophy.  Certified lemmas can become macro edges.  Verified equivalences can support quotienting.  A valid incumbent upper bound \(B\), exact spent cost \(g(v)\), and admissible lower bound \(h(v)\) justify pruning whenever
+\[
+ g(v)+h(v)\ge B.
+\]
+The Hodge paper explicitly applies these ideas to sub-rungs: symmetry-related basis states, equivalent encodings, repeated prerequisite packages, and branches unable to improve an incumbent are potential candidates for certified collapse or pruning.  In the P-vs.-NP line, conservative compilation and shortest-proof/horizon analysis supply the analogous mechanism for reducing repeated work without pretending that the native theorem suddenly has a shorter proof.
+
+\textbf{Verdict: mathematically sound for both when its hypotheses are actually certified.}  The unresolved question is how much reduction is available on the hard instances.
+
+\subsection{Decomposition into ladders, rungs, or accessible neighbours}
+
+The Hodge manuscript's H0--H8 ladder and the P-vs.-NP manuscript's proof-system ladder serve the same strategic purpose: replace one opaque global target with a sequence of local statements that can be verified, refuted, or measured.  In Hodge this produced concrete H2 progress.  In P versus NP it clarifies that resolution and bounded-depth Frege lower bounds are known while Frege, Extended Frege, and the universal proof-system level remain open.  The ladder does not solve the final conjecture, but it makes the location of the obstruction explicit.
+
+\textbf{Verdict: works for both as research decomposition and experimental curriculum.}
+
+\section{Techniques with evidence for at least one program}
+
+\begin{longtable}{@{}p{0.27\textwidth}p{0.19\textwidth}p{0.46\textwidth}@{}}
+\caption{Techniques whose positive evidence is currently asymmetric.}\\
+\toprule
+Technique & Evidence strongest in & What is actually supported \\
+\midrule
+\endfirsthead
+\toprule
+Technique & Evidence strongest in & What is actually supported \\
+\midrule
+\endhead
+Operational reflective self-pruning & Hodge, 13 Aug. & The Hodge paper proves an existential Reflective Search Improvement theorem: a meta-ATP can prove a verifier-checkable fact about a frozen source search and a declared controller can use that fact to remove search while leaving object-theory certificate semantics unchanged.  The gain can be arbitrarily large on an explicit finite-decoy family. \\
+\addlinespace
+Semigroup-compatible quotients & Hodge & If active maps generate a transformation semigroup, a useful search equivalence should behave as a congruence under future actions and preserve settlement classes.  This gives a mathematically coherent criterion for quotienting DATA states.  No corresponding P-vs.-NP empirical gain is reported in the July paper. \\
+\addlinespace
+Learned search ordering & P-vs.-NP / Predator line & The condensed-detachment Predator 5 experiment reports about 2.14-fold fewer materializations and 1.76-fold wall-clock speedup for a low-overhead learned reordering policy.  This is real but toy-fragment evidence, not P-vs.-NP evidence. \\
+\addlinespace
+Hodge-specific prerequisite formalization & Hodge & Six verifier-backed H0/H1/H2 bank nodes were present by the 12 August snapshot, with the signed basis Hodge-star formula next.  This is genuine formalization progress but still far below the general Hodge statement. \\
+\addlinespace
+Proof-complexity barrier analysis & P vs. NP & The July paper productively rules out naive lower-bound routes and identifies the missing object: a genuine lower bound on strong proof systems.  This is diagnostic mathematical progress, not a P-vs.-NP settlement. \\
+\addlinespace
+Definitional floor & P vs. NP & Because the July \texttt{set.mm} snapshot lacked a machine model, time bounds, and complexity classes, the paper obtains a soft lower bound on what must be added before the target can even be expressed and manipulated.  This is a valid lower floor, but far from a complexity-theoretic lower bound. \\
+\bottomrule
+\end{longtable}
+
+\section{Promising-sounding techniques that, as far as these data show, work for neither main conjecture}
+
+\subsection{Static learned ``compass'' scores as a complete controller}
+
+This is the sharpest negative experimental result available after both papers.  In the 14 August settlement-compass Experiment 004, more true proof-DAG training improved held-out navigation statistics: global AUC rose from 0.8353 at 10 training roots to roughly 0.888 by 80--160 roots, while the oversized 3,612-root condition improved precision@10 to 0.670 and reduced median direct-parent rank to 57.  Those numbers look encouraging.
+
+Experiment 005 then exposed the missing step.  At the 160-DAG shell, the learned trajectory diagnostics could show positive aggregate progress statistics while the executed retrospective controller settled \emph{0 of 100} trajectories because it repeatedly selected distractor/off-DAG successors.  Therefore static ranking quality, AUC, Spearman correlation, or top-k accuracy cannot by themselves be treated as evidence of a successful conjecture-settling controller.
+
+\textbf{Status for Hodge and P vs. NP: promising navigation component, not demonstrated end-to-end solution method.}
+
+\subsection{Continuous/fractional iteration, Abel or Schröder coordinates, and global IFS embeddings}
+
+The Hodge paper gives a clean retrospective observation: along a settling orbit one can define an exact remaining-time coordinate and hence an Abel-type relation.  But computing that coordinate prospectively may be as difficult as solving the remaining search.  The manuscript itself therefore classifies continuous semigroups, fractional iterates, Schröder coordinates, infinitesimal generators, and flow-informed scheduling as optional experimental layers rather than soundness assumptions.
+
+\textbf{Status: mathematically suggestive, no demonstrated Hodge or P-vs.-NP settlement gain.}
+
+\subsection{Self-awareness by itself}
+
+The 13 August Hodge result is easy to overstate.  What helps in the theorem is not the label ``self-aware''; it is a \emph{specific, verified operational theorem} about the current search that licenses a safe pruning or quotient operation.  The Hodge paper explicitly states that Level-1 or Level-\(\omega\) self-awareness alone does not imply speedup.
+
+\textbf{Status: reflection without a useful verified control consequence works for neither problem as far as is known.}
+
+\subsection{Hilbert space-filling ordering and geometric search ordering}
+
+Hilbert ordering belongs to the broader theorem-search program, but the comparison papers provide no controlled evidence that it materially advances either Hodge or P versus NP.  A fair or exhaustive ordering can have completeness value without having practical hitting-time value.  Later maze work appropriately places Hilbert ordering after exact quotients, bounds, and compilation in the experimental priority.
+
+\textbf{Status: interesting heuristic, not demonstrated on either main conjecture.}
+
+\subsection{Min-plus/tropical path algebra}
+
+Min-plus language elegantly expresses ``sum costs along a route; take the minimum over alternative routes.''  This is structurally appropriate for weighted theorem mazes, but an algebraic restatement does not itself reduce the implicit state explosion.
+
+\textbf{Status: useful formal language, no demonstrated settlement gain for either conjecture.}
+
+\subsection{Naive counting as a P-vs.-NP proof-length lower bound}
+
+The July paper itself gives the correct negative result.  Counting can show that most statements must have long proofs, but P versus NP is one distinguished statement and can always be the exceptional short one.  Thus the approach sounds like a natural way to prove a long settlement horizon but does not provide the needed lower bound.
+
+\textbf{Status: fails for P versus NP; has no useful analogue for settling Hodge here.}
+
+\section{New answer to Section 13 of the July paper}
+
+Section 13 asks for the number that the paper did not yet have: measure \(\kuse\) for a real policy on a real corpus.  On 14 August 2026, a pilot implementation was added to the public ATP repository and run under GitHub Actions against the then-current development copy of \texttt{set.mm}.
+
+The protocol follows the paper's central requirements: one shared chronological index, two goal frontiers for \(c\) and \(\neg c\), alternating expansions, branch-local substitutions, a shared store for closed lemmas, and origin/use logging.  It additionally filters targets for which either side has a direct one-step closer, reducing the duplicate-lookup contamination exposed by the July paper.
+
+\begin{table}[H]
+\centering
+\caption{First Section-13 pilot.  This is a small descriptive run, not a corpus estimate.}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+Target & Stages & \(|\Lambda|\) & use-crossed & \(\kuse\) & \(\kav\) & Settled \\
+\midrule
+\texttt{notnoti} & 1500 & 118 & 32 & 0.271186 & 1.000 & no \\
+\texttt{pm2.01i} & 1500 & 209 & 50 & 0.239234 & 1.000 & no \\
+\midrule
+Pooled & 3000 & 327 & 82 & \textbf{0.250765} & \textbf{1.000} & 0/2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+So the first empirical answer is not \(\kuse=0\).  For this pilot controller and these two filtered early-corpus targets,
+\[
+\boxed{\kuse=\frac{82}{327}\approx0.2508.}
+\]
+Every deposited lemma eventually became cross-available in this tiny run, hence \(\kav=1\).  The useful interpretation is narrow: the ``other'' branch is demonstrably capable of manufacturing lemmas that cross the branch boundary under this policy.  The result does \emph{not} yet show a positive settlement dividend because neither target settled within budget.  Theorem 11.1's logical direction remains exactly the right caution: nonzero use-crossing is necessary for reuse speedup, not sufficient.
+
+Three limitations keep this result at pilot status.  First, the controller is modeled on the documented Predator 7.1 search shape rather than being a byte-identical replay of the historical executable.  Second, dynamically deposited derived lemmas have not yet been exported and independently replayed one-by-one as standalone Metamath certificates, even though they are built from verifier-backed source assertions.  Third, two targets are far too few for a corpus-wide estimate.  The next decisive experiment is a frozen target set run twice under identical budgets: shared bank ON versus OFF, with every deposited lemma independently certificate-checked.  That experiment would estimate both \(\kuse\) and the actual settlement dividend \(\Delta(c)\).
+
+\section{Cross-problem technique matrix}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Current status as of 14 August 2026.  ``Works'' means locally supported, not Millennium-problem settlement.}
+\begin{tabularx}{\textwidth}{@{}Xcccc@{}}
+\toprule
+Technique & Hodge & P vs. NP & Direct experiment? & Main-conjecture success? \\
+\midrule
+Independent verifier / certificate gate & \yes & \yes & \yes & \no \\
+Persistent verified lemma bank & \yes & \yes & \partialyes & \no \\
+Conservative compilation / macro reuse & \yes & \yes & \partialyes & \no \\
+Proof/search cost separation & \yes & \yes & \yes & \no \\
+Exact pruning from valid bounds & \partialyes & \partialyes & synthetic / proposed & \no \\
+Verified quotienting & \partialyes & \partialyes & not yet at scale & \no \\
+Problem ladder / prerequisite decomposition & \yes & \yes & operational & \no \\
+Operational reflective self-pruning & theorem + synthetic & not in July paper & synthetic & \no \\
+Learned search ordering & not yet Hodge-proved & toy-fragment \yes & \yes & \no \\
+Static settlement compass & proposed & proposed & \yes, mixed & \no \\
+IFS / fractional iteration / Abel control & proposed & not established & no decisive test & \no \\
+Hilbert ordering & broader program & broader program & no decisive test here & \no \\
+Min-plus path algebra & structural & structural & no speedup test & \no \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{What the comparison suggests doing next}
+
+The evidence favors a conservative ordering of work.
+
+\begin{enumerate}
+\item \textbf{Freeze corpora, targets, budgets, and cost metrics.}  The 47,572-versus-47,672 theorem count already shows why the date and exact \texttt{set.mm} revision must be recorded.
+\item \textbf{Measure exact structural reductions first.}  Canonicalization, quotienting, conservative compilation, verified landmarks, admissible lower bounds, and incumbent pruning should each be ablated separately.
+\item \textbf{Complete the Section-13 experiment.}  Run a larger frozen negative-theorem set under shared-bank ON/OFF conditions, certificate-check every dynamic lemma, and report \(\kav\), \(\kuse\), \(\Delta(c)\), wall time, and materializations.
+\item \textbf{For Hodge, instrument the missing reduction statistic before claiming compression.}  The Hodge paper explicitly says no numerical cumulative \(Q\) product is currently known.  Record the eligible-state denominator before and after every certified prune/quotient and charge reflection overhead.
+\item \textbf{Treat learned navigation as a layer, not an authority.}  The MAX shell data support continued training for local tunneling, but the 0/100 controller result requires successor-robust and closed-loop evaluation before any Hodge/P-vs.-NP extrapolation.
+\item \textbf{Do not expect search engineering to replace proof-complexity mathematics.}  For P versus NP, the July paper's strongest self-criticism remains decisive: without strong lower bounds in sufficiently strong proof systems, a search speedup or proof-horizon theorem cannot become a P-vs.-NP proof.
+\end{enumerate}
+
+\section{Conclusion}
+
+Read in chronological order, the two papers show a genuine development of method.  The July P-vs.-NP paper is strongest when it is skeptical: it builds a trustworthy verifier, discovers that its apparent four successes are mathematically trivial duplicate lookups, formalizes when cross-branch lemma sharing can help, and identifies proof-complexity lower bounds as the missing bridge to the Clay problem.  The 13 August Hodge paper takes that verifier-gated philosophy into a richer architecture and proves one additional mechanism: bounded operational self-knowledge can, on explicit families, justify safe pruning and strictly reduce search.
+
+The common winning pattern is therefore \emph{certify, reuse, reduce, bound, then navigate}.  The weaker pattern is \emph{learn or reflect first and infer success from attractive diagnostics}.  The later 14 August experiments reinforce that distinction: more training makes a static compass look better, yet a naive controller can still go 0/100; meanwhile the first Section-13 pilot finds a nonzero pooled cross-branch use rate, about 0.2508, but no settlement inside budget.  Those are exactly the kinds of results the program should preserve: positive when warranted, negative when warranted, and explicit about what remains unknown.
+
+Neither paper currently supplies evidence that the Hodge conjecture or P versus NP is close to settlement.  Both do, however, support a common research strategy in which mathematical truth remains verifier-gated while increasingly sophisticated machinery is allowed to compete over where the next unit of computation should be spent.
+
+\begin{thebibliography}{99}
+\bibitem{PvsNP}
+B. Tenneson, \emph{Predator 7.1 Documentation and Cross-Branch Reuse Rate Theory, with efforts toward lower bounds on the settlement length of P vs NP}, Revision 2, July 2026.
+
+\bibitem{Hodge}
+B. Tenneson, \emph{The Hodge Ladder, DATA 3.0, and Reflective Search: What was known through 12 August 2026, and the self-aware search theorems of 13 August 2026}, working research synthesis, 13 August 2026, 16:20 PDT.
+
+\bibitem{SearchDynamics}
+B. Tenneson, \emph{From Search Dynamics to Semi-Ideal Computers: Cumulative Verified Histories, Rationally Weighted Theorem Mazes, Reflective ATPs, and Discovery}, Discovery Addendum, Version 0.3, 14 August 2026.
+
+\bibitem{Section13Repo}
+Section-13 pilot implementation and results, \texttt{btenneson/ATP}, 14 August 2026.\\
+\url{https://github.com/btenneson/ATP/tree/main/experiments/section13_results}
+
+\bibitem{ATPRepo}
+B. Tenneson, public ATP research repository.\\
+\url{https://github.com/btenneson/ATP}
+\end{thebibliography}
+
+\end{document}
