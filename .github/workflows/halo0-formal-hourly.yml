@@ -47,9 +47,23 @@ jobs:
           python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_df_infml_tree.log
           python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_infmlen_tree.log
 
+      - name: Prover import gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, os.path.join(os.getcwd(), 'predator 8'))
+          import metamath
+          import setmm_grammar
+          print('Predator dependencies import OK')
+          PY
+
       - name: Independent blind proof search
         id: search
         shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           set +e
           set -o pipefail
@@ -109,5 +123,5 @@ jobs:
             halo0_verifier.log
             infmlen_p8.mm
 
-# Triggered intentionally for Halo(0) tranche 1.
-# Triggered automatically for Halo(0) tranche 2; use run number as a distinct seed.
+# Tranches 1 and 2 exposed an import-path infrastructure fault before proof search.
+# This revision adds an explicit import gate and PYTHONPATH, then triggers the first real search tranche.
