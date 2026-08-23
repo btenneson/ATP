@@ -1,0 +1,110 @@
+name: Halo(0) Formal Metamath — 1 Hour
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/halo0-formal-hourly.yml
+
+permissions:
+  contents: read
+
+jobs:
+  halo0-formal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download current set.mm
+        run: |
+          curl -L --fail --retry 3 \
+            -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/develop/set.mm
+          wc -c set.mm
+
+      - name: Build Halo(0) extension
+        run: |
+          cat set.mm hyperreal.mm > setmm_ext.mm
+          printf '%s\n' \
+            'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
+            'POLICY: target proof withheld; success requires an emitted certificate accepted by the Metamath verifier' \
+            'WALL CLOCK: one GitHub Actions job, hard cap 60 minutes' \
+            > halo0_manifest.txt
+
+      - name: Formal syntax gate
+        run: |
+          set -o pipefail
+          python setmm_grammar.py roundtrip setmm_ext.mm --sample 3000 | tee halo0_roundtrip.log
+          python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_df_infml_tree.log
+          python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_infmlen_tree.log
+
+      - name: Independent blind proof search
+        id: search
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          # Keep several minutes inside the 60-minute job cap for setup,
+          # certificate emission, verification, and artifact upload.
+          timeout --signal=INT --kill-after=20s 50m \
+            python 'predator 8/predator 8.001.py' prove setmm_ext.mm \
+              --label infmlen \
+              --budget 50000000 \
+              --max-depth 24 \
+              --agents 8 \
+              --creativity 0.65 \
+              --opener-cap 96 \
+              --max-open 10 \
+              --seed "${GITHUB_RUN_ATTEMPT}" \
+              --progress 5000 \
+              --out infmlen_p8.mm \
+            2>&1 | tee halo0_search.log
+          rc=${PIPESTATUS[0]}
+          echo "search_rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "SEARCH_RC=$rc" | tee -a halo0_manifest.txt
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ]; then
+            echo 'OUTCOME=TIMEOUT_UNKNOWN' | tee -a halo0_manifest.txt
+          elif [ "$rc" -eq 0 ]; then
+            echo 'OUTCOME=CANDIDATE_EMITTED' | tee -a halo0_manifest.txt
+          else
+            echo 'OUTCOME=UNKNOWN_OR_PROTOCOL_FAILURE' | tee -a halo0_manifest.txt
+          fi
+          exit 0
+
+      - name: Verify emitted certificate independently
+        if: hashFiles('infmlen_p8.mm') != ''
+        shell: bash
+        run: |
+          set -o pipefail
+          python metamath.py verify infmlen_p8.mm 2>&1 | tee halo0_verifier.log
+          echo 'VERIFIER_RAN=YES' | tee -a halo0_manifest.txt
+
+      - name: Record no-certificate outcome
+        if: hashFiles('infmlen_p8.mm') == ''
+        run: |
+          echo 'VERIFIER_RAN=NO' | tee -a halo0_manifest.txt
+          echo 'No certificate file was emitted in this tranche.' | tee -a halo0_manifest.txt
+
+      - name: Upload run record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo0-formal-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: warn
+          path: |
+            halo0_manifest.txt
+            halo0_roundtrip.log
+            halo0_df_infml_tree.log
+            halo0_infmlen_tree.log
+            halo0_search.log
+            halo0_verifier.log
+            infmlen_p8.mm
