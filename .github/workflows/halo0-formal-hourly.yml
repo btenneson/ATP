@@ -125,3 +125,4 @@ jobs:
 
 # Tranches 1 and 2 exposed an import-path infrastructure fault before proof search.
 # This revision adds an explicit import gate and PYTHONPATH, then triggers the first real search tranche.
+# Previous valid tranche timed out without emitting a certificate; trigger one additional tranche.
