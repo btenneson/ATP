@@ -1,4 +1,4 @@
-name: Halo(0) Formal Metamath — 1 Hour
+name: Halo(0) Formal Metamath — Settlement Compass — 1 Hour
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/halo0-formal-hourly.yml
+      - 'predator 8/predator 8.002-compass.py'
 
 permissions:
   contents: read
@@ -37,6 +38,10 @@ jobs:
           printf '%s\n' \
             'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
             'POLICY: target proof withheld; success requires an emitted certificate accepted by the Metamath verifier' \
+            'SEARCH: Predator 8.002C settlement-distance compass' \
+            'CONTROL: primary frontier key f_hat = g + r_hat(successor); creativity/novelty are secondary tie-break and exploration signals' \
+            'R_HAT: blind successor-state estimate dominated by number of open logical goals with bounded structural tie-breaks' \
+            'CAUTION: r_hat is not claimed to equal r* or to satisfy the < 1/2 half-step hypothesis; this run tests the compass implementation empirically' \
             'WALL CLOCK: one GitHub Actions job, hard cap 60 minutes' \
             > halo0_manifest.txt
 
@@ -47,19 +52,15 @@ jobs:
           python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_df_infml_tree.log
           python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_infmlen_tree.log
 
-      - name: Prover import gate
+      - name: Settlement-compass import and selftest gate
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          python - <<'PY'
-          import os, sys
-          sys.path.insert(0, os.path.join(os.getcwd(), 'predator 8'))
-          import metamath
-          import setmm_grammar
-          print('Predator dependencies import OK')
-          PY
+          set -o pipefail
+          python -m py_compile 'predator 8/predator 8.002-compass.py'
+          python 'predator 8/predator 8.002-compass.py' selftest | tee halo0_compass_selftest.log
 
-      - name: Independent blind proof search
+      - name: Independent blind settlement-compass proof search
         id: search
         shell: bash
         env:
@@ -70,7 +71,7 @@ jobs:
           # Keep several minutes inside the 60-minute job cap for setup,
           # certificate emission, verification, and artifact upload.
           timeout --signal=INT --kill-after=20s 50m \
-            python 'predator 8/predator 8.001.py' prove setmm_ext.mm \
+            python 'predator 8/predator 8.002-compass.py' prove setmm_ext.mm \
               --label infmlen \
               --budget 50000000 \
               --max-depth 24 \
@@ -80,7 +81,7 @@ jobs:
               --max-open 10 \
               --seed "${GITHUB_RUN_NUMBER}" \
               --progress 5000 \
-              --out infmlen_p8.mm \
+              --out infmlen_p8_compass.mm \
             2>&1 | tee halo0_search.log
           rc=${PIPESTATUS[0]}
           echo "search_rc=$rc" >> "$GITHUB_OUTPUT"
@@ -95,15 +96,15 @@ jobs:
           exit 0
 
       - name: Verify emitted certificate independently
-        if: hashFiles('infmlen_p8.mm') != ''
+        if: hashFiles('infmlen_p8_compass.mm') != ''
         shell: bash
         run: |
           set -o pipefail
-          python metamath.py verify infmlen_p8.mm 2>&1 | tee halo0_verifier.log
+          python metamath.py verify infmlen_p8_compass.mm 2>&1 | tee halo0_verifier.log
           echo 'VERIFIER_RAN=YES' | tee -a halo0_manifest.txt
 
       - name: Record no-certificate outcome
-        if: hashFiles('infmlen_p8.mm') == ''
+        if: hashFiles('infmlen_p8_compass.mm') == ''
         run: |
           echo 'VERIFIER_RAN=NO' | tee -a halo0_manifest.txt
           echo 'No certificate file was emitted in this tranche.' | tee -a halo0_manifest.txt
@@ -112,17 +113,19 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: halo0-formal-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: halo0-compass-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             halo0_manifest.txt
             halo0_roundtrip.log
             halo0_df_infml_tree.log
             halo0_infmlen_tree.log
+            halo0_compass_selftest.log
             halo0_search.log
             halo0_verifier.log
-            infmlen_p8.mm
+            infmlen_p8_compass.mm
 
-# Tranches 1 and 2 exposed an import-path infrastructure fault before proof search.
-# This revision adds an explicit import gate and PYTHONPATH, then triggers the first real search tranche.
-# Previous valid tranche timed out without emitting a certificate; trigger one additional tranche.
+# Switched from Predator 8.001 heuristic-first search to Predator 8.002C.
+# 8.002C makes an explicit blind estimate of remaining settlement distance the
+# primary search-control signal while retaining exploration as a secondary
+# mechanism.  Exact r* remains unknown on Halo(0); the run tests the surrogate.
