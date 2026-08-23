@@ -108,3 +108,5 @@ jobs:
             halo0_search.log
             halo0_verifier.log
             infmlen_p8.mm
+
+# Triggered intentionally for Halo(0) tranche 1.
