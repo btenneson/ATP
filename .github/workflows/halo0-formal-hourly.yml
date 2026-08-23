@@ -64,7 +64,7 @@ jobs:
               --creativity 0.65 \
               --opener-cap 96 \
               --max-open 10 \
-              --seed "${GITHUB_RUN_ATTEMPT}" \
+              --seed "${GITHUB_RUN_NUMBER}" \
               --progress 5000 \
               --out infmlen_p8.mm \
             2>&1 | tee halo0_search.log
@@ -110,3 +110,4 @@ jobs:
             infmlen_p8.mm
 
 # Triggered intentionally for Halo(0) tranche 1.
+# Triggered automatically for Halo(0) tranche 2; use run number as a distinct seed.
