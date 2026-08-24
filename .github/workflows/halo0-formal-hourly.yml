@@ -129,4 +129,4 @@ jobs:
 # 8.002C makes an explicit blind estimate of remaining settlement distance the
 # primary search-control signal while retaining exploration as a secondary
 # mechanism.  Exact r* remains unknown on Halo(0); the run tests the surrogate.
-# Resume trigger: 2026-08-23T11:07-07:00.
+# Resume trigger: 2026-08-24T01:09-07:00.
