@@ -1,0 +1,136 @@
+name: Halo(0) Formal Metamath — Operational (3,4) R3I4 — 1 Hour
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/halo0-r3i4-hourly.yml
+      - 'predator 8/predator 8.003-R3I4.py'
+
+permissions:
+  contents: read
+
+jobs:
+  halo0-r3i4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download frozen set.mm baseline
+        run: |
+          # This was the develop head used by the immediately preceding
+          # 2026-08-24 Halo 8.002C tranche.  Freeze it so controller is the
+          # experimental variable rather than the Metamath database.
+          SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480
+          curl -L --fail --retry 3 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          wc -c set.mm
+          sha256sum set.mm | tee setmm_sha256.txt
+
+      - name: Build Halo(0) extension and manifest
+        run: |
+          cat set.mm hyperreal.mm > setmm_ext.mm
+          printf '%s\n' \
+            'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
+            'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
+            'POLICY: target proof withheld; success requires an emitted certificate accepted by the independent Metamath verifier' \
+            'SEARCH: Predator 8.003-R3I4 operational (3,4)' \
+            'R=3: checked live metacontrol over observable search state; switches FOCUS/BALANCED/ESCAPE from stagnation and duplicate pressure' \
+            'I=4: up to four further legal backward Metamath applications are simulated in FUTUREBANK before ranking strongest successors' \
+            'IMAGINATION_GATES: parse + unification/occurs check + max-open bound + repeated-state rejection; failure means UNKNOWN, not impossible' \
+            'REACHABILITY_SIGNAL: four-ply reduction in blind r_hat plus bounded bonus for syntactic closure within the imagined horizon' \
+            'CAUTION: R=3 is an operational checked-metacontrol coordinate, not a claim of fully arithmetized Prf_M/Prov_M reflection' \
+            'VERIFICATION: unchanged from Predator 8.001/8.002C; imagination and reflection cannot alter certificate acceptance' \
+            'CONTROL_MATCH: same target, budget, max-depth, agents, creativity, opener-cap, max-open policy as the preceding 8.002C Halo workflow' \
+            'WALL CLOCK: one GitHub Actions job, hard cap 60 minutes; proof-search tranche 50 minutes' \
+            > halo0_r3i4_manifest.txt
+          cat setmm_sha256.txt >> halo0_r3i4_manifest.txt
+
+      - name: Formal syntax gate
+        run: |
+          set -o pipefail
+          python setmm_grammar.py roundtrip setmm_ext.mm --sample 3000 | tee halo0_r3i4_roundtrip.log
+          python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_r3i4_df_infml_tree.log
+          python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_r3i4_infmlen_tree.log
+
+      - name: R3I4 import and selftest gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          python -m py_compile 'predator 8/predator 8.003-R3I4.py'
+          python 'predator 8/predator 8.003-R3I4.py' selftest | tee halo0_r3i4_selftest.log
+
+      - name: Blind operational (3,4) Halo proof search
+        id: search
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set +e
+          set -o pipefail
+          timeout --signal=INT --kill-after=20s 50m \
+            python 'predator 8/predator 8.003-R3I4.py' prove setmm_ext.mm \
+              --label infmlen \
+              --budget 50000000 \
+              --max-depth 24 \
+              --agents 8 \
+              --creativity 0.65 \
+              --opener-cap 96 \
+              --max-open 10 \
+              --seed "${GITHUB_RUN_NUMBER}" \
+              --progress 1000 \
+              --out infmlen_p8_r3i4.mm \
+            2>&1 | tee halo0_r3i4_search.log
+          rc=${PIPESTATUS[0]}
+          echo "search_rc=$rc" >> "$GITHUB_OUTPUT"
+          echo "SEARCH_RC=$rc" | tee -a halo0_r3i4_manifest.txt
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ]; then
+            echo 'OUTCOME=TIMEOUT_UNKNOWN' | tee -a halo0_r3i4_manifest.txt
+          elif [ "$rc" -eq 0 ]; then
+            echo 'OUTCOME=CANDIDATE_EMITTED' | tee -a halo0_r3i4_manifest.txt
+          else
+            echo 'OUTCOME=UNKNOWN_OR_PROTOCOL_FAILURE' | tee -a halo0_r3i4_manifest.txt
+          fi
+          exit 0
+
+      - name: Verify emitted certificate independently
+        if: hashFiles('infmlen_p8_r3i4.mm') != ''
+        shell: bash
+        run: |
+          set -o pipefail
+          python metamath.py verify infmlen_p8_r3i4.mm 2>&1 | tee halo0_r3i4_verifier.log
+          echo 'VERIFIER_RAN=YES' | tee -a halo0_r3i4_manifest.txt
+
+      - name: Record no-certificate outcome
+        if: hashFiles('infmlen_p8_r3i4.mm') == ''
+        run: |
+          echo 'VERIFIER_RAN=NO' | tee -a halo0_r3i4_manifest.txt
+          echo 'No certificate file was emitted in this tranche.' | tee -a halo0_r3i4_manifest.txt
+
+      - name: Upload run record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo0-r3i4-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: warn
+          path: |
+            halo0_r3i4_manifest.txt
+            setmm_sha256.txt
+            halo0_r3i4_roundtrip.log
+            halo0_r3i4_df_infml_tree.log
+            halo0_r3i4_infmlen_tree.log
+            halo0_r3i4_selftest.log
+            halo0_r3i4_search.log
+            halo0_r3i4_verifier.log
+            infmlen_p8_r3i4.mm
