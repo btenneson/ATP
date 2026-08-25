@@ -2,7 +2,8 @@
 """Predator 8.003-R3I4: operational (3,4) reasoned-imagination controller.
 
 This front-end preserves Predator 8.001 proof semantics and the 8.002C
-settlement-compass baseline.  It changes search control only.
+settlement-compass baseline.  It changes search control only, plus an exact
+formal-side-condition pruning gate for Metamath disjoint-variable obligations.
 
 Operational coordinate used in this experiment
 ----------------------------------------------
@@ -16,9 +17,10 @@ Prf_M/Prov_M reflection hierarchy.
 I=4 (reasoned FUTUREBANK imagination): before ranking the strongest successor
 candidates, the controller simulates up to four further legal backward
 Metamath assertion applications.  Imagined steps must parse, unify with occurs
-check, stay within the open-goal bound, and avoid repeated imagined states.
-The imagined path is never deposited as a proof.  It only supplies a bounded
-certificate-reachability signal to the search controller.
+check, respect already-forced disjoint-variable conditions, stay within the
+open-goal bound, and avoid repeated imagined states.  The imagined path is
+never deposited as a proof.  It only supplies a bounded certificate-reachability
+signal to the search controller.
 
 The target proof is never read.  No Halo-specific lemma list or route is coded.
 A success is still a Metamath certificate emitted by Predator and accepted by
@@ -42,9 +44,73 @@ if spec is None or spec.loader is None:
 COMP = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(COMP)
 P8 = COMP.P8
-P8.VERSION = "8.003-R3I4-operational"
+P8.VERSION = "8.003-R3I4-operational-dvaware"
 
 IMAGINATION_DEPTH = 4
+_TARGET_SCOPE_DVS = None
+
+
+def set_target_scope_dvs(dvs):
+    """Set the unrestricted $d pairs active at the target declaration.
+
+    This is search-side pruning only.  The certificate verifier remains the
+    authority.  A missing scope falls back to the weaker, still-sound rule that
+    a variable may never be forced disjoint from itself.
+    """
+    global _TARGET_SCOPE_DVS
+    _TARGET_SCOPE_DVS = set(dvs) if dvs is not None else None
+
+
+def _rigid_vars(t, sub, acc=None):
+    """Ordinary Metamath variables already forced to occur in a tree.
+
+    Unresolved metavariables are deliberately ignored: a future substitution
+    may still choose them.  Ordinary variables already present cannot disappear,
+    so any DV conflict among them is permanent and can be pruned soundly.
+    """
+    if acc is None:
+        acc = set()
+    t = P8.walk(t, sub)
+    if t.var is not None:
+        if not P8.is_meta(t):
+            acc.add(t.var)
+        return acc
+    for k in t.kids:
+        _rigid_vars(k, sub, acc)
+    return acc
+
+
+def _dv_obligations(data, mapping):
+    """Translate one assertion's $d pairs into renamed search-tree pairs."""
+    dvs = data[0]
+    out = []
+    for x, y in dvs:
+        tx, ty = mapping.get(x), mapping.get(y)
+        if tx is not None and ty is not None:
+            out.append((tx, ty, x, y))
+    return tuple(out)
+
+
+def _dv_ok(obligations, sub):
+    """Reject only DV violations that are already logically unavoidable.
+
+    If target-scope $d information is available, every pair of ordinary
+    variables already forced into the two substitutions must be distinct and
+    declared disjoint at the target scope.  Unresolved metas are not guessed.
+    Rechecking the accumulated obligations whenever the substitution grows
+    catches violations that become visible later.
+    """
+    allowed = _TARGET_SCOPE_DVS
+    for tx, ty, _x, _y in obligations:
+        xs = _rigid_vars(tx, sub)
+        ys = _rigid_vars(ty, sub)
+        for a in xs:
+            for b in ys:
+                if a == b:
+                    return False
+                if allowed is not None and (min(a, b), max(a, b)) not in allowed:
+                    return False
+    return True
 
 
 def _state_signature(goals, sub):
@@ -84,6 +150,8 @@ def _imagined_successors(goals, sub, index, max_open, branch_cap):
         fmap = {var: m.get(var, P8.fresh(tc)) for _fh, tc, var in f_hyps}
         for _fh, tc, var in f_hyps:
             m.setdefault(var, fmap[var])
+        if not _dv_ok(_dv_obligations(data, m), s2):
+            continue
 
         newgoals = []
         ok = True
@@ -210,7 +278,7 @@ def _select_openers_r3(openers, rest_count, legacy, profile, rng, policy):
 def prove_r3i4(goal_tree, index, budget, max_depth, rank=None, say=print,
                progress=2000, max_open=6, profile=None, seed=0,
                shared_use=None, agent_name=None):
-    """Best-first backward search with operational R3 + I4 control."""
+    """Best-first backward search with operational R3 + I4 + DV pruning."""
     if profile is None:
         profile = P8.Profile("deterministic", 0.0, 0.0, 0.0, 0.0,
                              0.0, 48, 1.0)
@@ -223,29 +291,35 @@ def prove_r3i4(goal_tree, index, budget, max_depth, rank=None, say=print,
     start = P8.Node([(goal_tree, None, 0)], {}, (), 0)
     start_h = COMP.settlement_distance_hat(start.goals, start.sub)
     frontier = [(start_h, start_h, start_h, 0.0, 0, 0.0, start)]
+    dv_by_node = {start: ()}
     exp = tie = 0
     seen = set()
     t0 = time.perf_counter()
     announced = False
     meta = R3Controller()
     total_imagined = 0
+    dv_rejects = 0
 
     while frontier and exp < budget:
         _fhat, _reachhat, _rhat, _neglegacy, _, g_cost, node = heapq.heappop(frontier)
+        node_dv = dv_by_node.pop(node, ())
         exp += 1
+        if not _dv_ok(node_dv, node.sub):
+            dv_rejects += 1
+            continue
         live_rhat = COMP.settlement_distance_hat(node.goals, node.sub)
         mode, stale, dup_rate = meta.observe(exp, live_rhat, False)
         policy = meta.policy()
 
         if not announced and say:
-            say("      [%s] operational (3,4) active: R3 metacontrol + 4-ply reasoned FUTUREBANK"
+            say("      [%s] operational (3,4) active: R3 metacontrol + 4-ply reasoned FUTUREBANK + DV gate"
                 % agent_name)
             announced = True
         if progress and say and exp % progress == 0:
-            say("      [%s] %s expansions, %d open, r_hat=%.3f, R3=%s, stale=%d, dup=%.1f%%, imagined=%s, %.0fs"
+            say("      [%s] %s expansions, %d open, r_hat=%.3f, R3=%s, stale=%d, dup=%.1f%%, imagined=%s, dvrej=%s, %.0fs"
                 % (agent_name, f"{exp:,}", len(node.goals), live_rhat,
                    mode, stale, 100.0 * dup_rate, f"{total_imagined:,}",
-                   time.perf_counter() - t0))
+                   f"{dv_rejects:,}", time.perf_counter() - t0))
 
         if not node.goals:
             root = None
@@ -296,6 +370,12 @@ def prove_r3i4(goal_tree, index, budget, max_depth, rank=None, say=print,
             fmap = {var: m.get(var, P8.fresh(tc)) for _fh, tc, var in f_hyps}
             for _fh, tc, var in f_hyps:
                 m.setdefault(var, fmap[var])
+
+            successor_dv = node_dv + _dv_obligations(data, m)
+            if not _dv_ok(successor_dv, s2):
+                dv_rejects += 1
+                continue
+
             step = P8.Step(lab, fmap, data)
             newgoals = []
             ok = True
@@ -318,6 +398,7 @@ def prove_r3i4(goal_tree, index, budget, max_depth, rank=None, say=print,
                 successor_goals, s2,
                 node.trail + ((slot, hix, step),),
                 node.depth + 1)
+            dv_by_node[successor] = successor_dv
             new_g = g_cost + 1.0
             rhat = COMP.settlement_distance_hat(successor_goals, s2)
             reachhat = rhat
