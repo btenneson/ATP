@@ -1,4 +1,4 @@
-name: Halo(0) R3I4 — DV-coherent matched seed 13 — 3h
+name: Halo(0) R3I4 — Wall-fair 8-agent seed 13 — 3h
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/halo0-r3i4-dvcoherent-seed13.yml
+      - 'predator 8/predator 8.008-R3I4-wallfair-population.py'
 
 permissions:
   contents: read
@@ -13,8 +14,8 @@ permissions:
 jobs:
   halo0-r3i4-seed13:
     runs-on: ubuntu-latest
-    # Allow preprocessing, verification, and artifact upload outside the
-    # three-hour proof-search clock.
+    # Preprocessing, independent verification, and artifact upload are outside
+    # the three-hour proof-search clock.
     timeout-minutes: 210
 
     steps:
@@ -35,21 +36,28 @@ jobs:
           wc -c set.mm
           sha256sum set.mm | tee setmm_sha256.txt
 
-      - name: Build Halo(0) extension and comparison manifest
+      - name: Build Halo(0) extension and experiment manifest
         run: |
           cat set.mm hyperreal.mm > setmm_ext.mm
           printf '%s\n' \
-            'EXPERIMENT: matched-seed continuation against Predator 8.006 run #13' \
+            'EXPERIMENT: wall-clock-fair eight-agent operational (3,4) population' \
             'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
             'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
-            'SEARCH: Predator 8.007 R3I4 DV-coherent FUTUREBANK' \
-            'CONTROL: seed fixed at 13 to preserve the earlier matched-seed comparison' \
+            'SEARCH: Predator 8.008 R3I4 wall-clock-fair population over Predator 8.007 DV-coherent FUTUREBANK' \
             'FIXED_SEED=13' \
-            'PURPOSE: test the same DV-coherent R3I4 mechanism for a substantially longer wall-clock tranche' \
-            'UNCHANGED ALGORITHMIC CONTROLS: target, corpus, proof calculus, strategy-switch controller, DV real-search gates, terminal-ground fallback, global expansion budget, depth, agents, creativity, opener cap, max-open, and verification boundary' \
-            'SEARCH CLOCK CHANGE: proof-search wall clock increased from 50 minutes to 180 minutes (3 hours)' \
-            'COMPARISON NOTE: only the first 50 minutes are directly time-matched to the prior 8.006 seed-13 run; later progress is an extended-budget continuation experiment' \
-            'POLICY: target proof withheld; success requires emitted certificate plus independent verification' \
+            'POPULATION: all 8 profiles receive bounded wall-clock access instead of allowing agent 1 to consume the entire experiment before later profiles start' \
+            'INTERNAL_POPULATION_CLOCK=10720 seconds (178m40s)' \
+            'FAIRNESS RULE: at each agent start, remaining internal population time is divided equally among agents still to run; unused time from an early finish is redistributed forward' \
+            'INITIAL_SLICE_WITH_8_AGENTS=1340 seconds (22m20s)' \
+            'EXPANSION DISCIPLINE: original per-profile expansion shares remain hard caps and sum to the unchanged global 50,000,000 expansion budget' \
+            'SHARED SEARCH HEURISTIC: assertion-usage counts remain shared across in-process agents as in the original population scheduler' \
+            'R=3: saturation-triggered COMPASS/CERTIFY/DIVERSIFY/LEAN strategy switching remains active inside every agent' \
+            'I=4: DV-coherent FUTUREBANK carries full accumulated Metamath DV obligations and imagined terminals must survive emission-time grounding' \
+            'DV GATES: forced violations are pruned during real search and illegal grounded terminal branches are rejected while search continues' \
+            'INDEX: full 49,265 pre-target logical assertion corpus; no assertion silently omitted' \
+            'CLOCK DISCIPLINE: preprocessing/index construction is outside proof-search clock; shell proof-search limit is 180m' \
+            'COMPARISON NOTE: this intentionally changes population scheduling, so it is not a pure algorithmic A/B against the earlier sequential 3-hour run' \
+            'POLICY: target proof withheld; success requires emitted certificate accepted in-process and by independent Metamath verification' \
             > halo0_r3i4_manifest.txt
           cat setmm_sha256.txt >> halo0_r3i4_manifest.txt
 
@@ -60,7 +68,7 @@ jobs:
           python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_r3i4_df_infml_tree.log
           python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_r3i4_infmlen_tree.log
 
-      - name: R3I4 DV-coherent selftest gate
+      - name: R3I4 wall-fair population selftest gate
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -70,10 +78,11 @@ jobs:
           python -m py_compile 'predator 8/predator 8.005-R3I4-terminaldv.py'
           python -m py_compile 'predator 8/predator 8.006-R3I4-strategy-switch.py'
           python -m py_compile 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py'
+          python -m py_compile 'predator 8/predator 8.008-R3I4-wallfair-population.py'
           python -m py_compile 'predator 8/predator_index_cache.py'
           python -m py_compile 'predator 8/predator_index_cache_v4.py'
           python -m py_compile 'predator 8/predator_fast_parse.py'
-          python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' selftest | tee halo0_r3i4_selftest.log
+          python 'predator 8/predator 8.008-R3I4-wallfair-population.py' selftest | tee halo0_r3i4_selftest.log
 
       - name: Restore full assertion-index cache
         id: index-cache
@@ -89,22 +98,24 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p .cache
-          python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' build-index setmm_ext.mm \
+          python 'predator 8/predator 8.008-R3I4-wallfair-population.py' build-index setmm_ext.mm \
             --label infmlen 2>&1 | tee halo0_r3i4_index.log
           echo "INDEX_CACHE_HIT=${{ steps.index-cache.outputs.cache-hit }}" | tee -a halo0_r3i4_manifest.txt
 
-      - name: Blind matched-seed (3,4) Halo proof search — 3 hours
+      - name: Blind wall-fair eight-agent (3,4) Halo proof search — 3 hours
         id: search
         shell: bash
         env:
           PYTHONPATH: ${{ github.workspace }}
           PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v4.pkl
+          # Leave ~80 seconds inside the shell's 180m limit for normal return,
+          # certificate emission, and cleanup after all eight slices.
+          PREDATOR_POP_WALL_SECONDS: '10720'
         run: |
           set +e
           set -o pipefail
-          # The proof-search clock starts here and runs for three hours.
           timeout --signal=INT --kill-after=20s 180m \
-            python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' prove setmm_ext.mm \
+            python 'predator 8/predator 8.008-R3I4-wallfair-population.py' prove setmm_ext.mm \
               --label infmlen \
               --budget 50000000 \
               --max-depth 24 \
@@ -118,10 +129,12 @@ jobs:
             2>&1 | tee halo0_r3i4_search.log
           rc=${PIPESTATUS[0]}
           echo "SEARCH_RC=$rc" | tee -a halo0_r3i4_manifest.txt
-          if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ]; then
-            echo 'OUTCOME=TIMEOUT_UNKNOWN' | tee -a halo0_r3i4_manifest.txt
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ] || [ "$rc" -eq 137 ]; then
+            echo 'OUTCOME=EXTERNAL_TIMEOUT_UNKNOWN' | tee -a halo0_r3i4_manifest.txt
           elif [ "$rc" -eq 0 ]; then
             echo 'OUTCOME=IN_PROCESS_VERIFIED_CANDIDATE' | tee -a halo0_r3i4_manifest.txt
+          elif [ "$rc" -eq 1 ]; then
+            echo 'OUTCOME=WALLFAIR_UNKNOWN_NO_CERTIFICATE' | tee -a halo0_r3i4_manifest.txt
           elif [ "$rc" -eq 2 ]; then
             echo 'OUTCOME=PROTOCOL_FAILURE_NOT_A_PROOF' | tee -a halo0_r3i4_manifest.txt
           else
@@ -151,13 +164,13 @@ jobs:
         if: hashFiles('infmlen_p8_r3i4.mm') == ''
         run: |
           echo 'INDEPENDENT_VERIFIER=NOT_RUN' | tee -a halo0_r3i4_manifest.txt
-          echo 'No certificate file was emitted in this matched-seed 3-hour tranche.' | tee -a halo0_r3i4_manifest.txt
+          echo 'No certificate file was emitted by the wall-clock-fair eight-agent 3-hour population.' | tee -a halo0_r3i4_manifest.txt
 
-      - name: Upload matched-seed run record
+      - name: Upload wall-fair population run record
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: halo0-r3i4-dvcoherent-seed13-3h-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: halo0-r3i4-wallfair-seed13-3h-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             halo0_r3i4_manifest.txt
