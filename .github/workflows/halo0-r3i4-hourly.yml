@@ -1,4 +1,4 @@
-name: Halo(0) Formal Metamath — Operational (3,4) R3I4 — 1 Hour
+name: Halo(0) Formal Metamath — Operational (3,4) R3I4 — 50m Search
 
 on:
   workflow_dispatch:
@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/halo0-r3i4-hourly.yml
       - 'predator 8/predator 8.003-R3I4.py'
+      - 'predator 8/predator 8.004-R3I4-indexed.py'
+      - 'predator 8/predator_index_cache.py'
 
 permissions:
   contents: read
@@ -14,7 +16,9 @@ permissions:
 jobs:
   halo0-r3i4:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Preprocessing is now outside the proof-search clock.  The first run may
+    # need to construct the full cache; subsequent runs restore it.
+    timeout-minutes: 90
 
     steps:
       - name: Check out repository
@@ -27,9 +31,6 @@ jobs:
 
       - name: Download frozen set.mm baseline
         run: |
-          # This was the develop head used by the immediately preceding
-          # 2026-08-24 Halo 8.002C tranche.  Freeze it so controller is the
-          # experimental variable rather than the Metamath database.
           SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480
           curl -L --fail --retry 3 \
             -o set.mm \
@@ -44,15 +45,14 @@ jobs:
             'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
             'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
             'POLICY: target proof withheld; success requires an emitted certificate accepted by the independent Metamath verifier' \
-            'SEARCH: Predator 8.003-R3I4 operational (3,4)' \
-            'R=3: checked live metacontrol over observable search state; switches FOCUS/BALANCED/ESCAPE from stagnation and duplicate pressure' \
-            'I=4: up to four further legal backward Metamath applications are simulated in FUTUREBANK before ranking strongest successors' \
-            'IMAGINATION_GATES: parse + unification/occurs check + max-open bound + repeated-state rejection; failure means UNKNOWN, not impossible' \
-            'REACHABILITY_SIGNAL: four-ply reduction in blind r_hat plus bounded bonus for syntactic closure within the imagined horizon' \
-            'CAUTION: R=3 is an operational checked-metacontrol coordinate, not a claim of fully arithmetized Prf_M/Prov_M reflection' \
-            'VERIFICATION: unchanged from Predator 8.001/8.002C; imagination and reflection cannot alter certificate acceptance' \
-            'CONTROL_MATCH: same target, budget, max-depth, agents, creativity, opener-cap, max-open policy as the preceding 8.002C Halo workflow' \
-            'WALL CLOCK: one GitHub Actions job, hard cap 60 minutes; proof-search tranche 50 minutes' \
+            'SEARCH: Predator 8.003 R3I4 control law through 8.004 indexed wrapper' \
+            'R=3: checked live metacontrol over observable search state; FOCUS/BALANCED/ESCAPE from stagnation and duplicate pressure' \
+            'I=4: up to four further legal backward Metamath applications simulated in FUTUREBANK before ranking strongest successors' \
+            'INDEX: FULL pre-target logical corpus; parallel parse; persistent cache; no assertion silently omitted' \
+            'CLOCK DISCIPLINE: preprocessing/index construction is outside the proof-search clock' \
+            'CONTROL MATCH: target, budget, max-depth, agents, creativity, opener-cap and max-open unchanged from the intended first R3I4 run' \
+            'PROOF SEARCH WALL CLOCK: hard 50-minute tranche' \
+            'VERIFICATION: unchanged; imagination/metacontrol/indexing cannot alter certificate acceptance' \
             > halo0_r3i4_manifest.txt
           cat setmm_sha256.txt >> halo0_r3i4_manifest.txt
 
@@ -63,24 +63,48 @@ jobs:
           python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_r3i4_df_infml_tree.log
           python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_r3i4_infmlen_tree.log
 
-      - name: R3I4 import and selftest gate
+      - name: R3I4 indexed import and selftest gate
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -o pipefail
           python -m py_compile 'predator 8/predator 8.003-R3I4.py'
-          python 'predator 8/predator 8.003-R3I4.py' selftest | tee halo0_r3i4_selftest.log
+          python -m py_compile 'predator 8/predator_index_cache.py'
+          python -m py_compile 'predator 8/predator 8.004-R3I4-indexed.py'
+          python 'predator 8/predator 8.004-R3I4-indexed.py' selftest | tee halo0_r3i4_selftest.log
 
-      - name: Blind operational (3,4) Halo proof search
+      - name: Restore full assertion-index cache
+        id: index-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/halo0_infmlen_full_index_v2.pkl
+          key: halo0-infmlen-full-index-v2-0acf270b-${{ hashFiles('hyperreal.mm', 'setmm_grammar.py', 'predator 8/predator_index_cache.py') }}
+
+      - name: Build or validate full pre-target assertion index
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v2.pkl
+        run: |
+          set -o pipefail
+          mkdir -p .cache
+          python 'predator 8/predator 8.004-R3I4-indexed.py' build-index setmm_ext.mm \
+            --label infmlen 2>&1 | tee halo0_r3i4_index.log
+          echo "INDEX_CACHE_HIT=${{ steps.index-cache.outputs.cache-hit }}" | tee -a halo0_r3i4_manifest.txt
+          ls -lh .cache/halo0_infmlen_full_index_v2.pkl | tee -a halo0_r3i4_manifest.txt
+
+      - name: Blind operational (3,4) Halo proof search — 50 minutes
         id: search
         shell: bash
         env:
           PYTHONPATH: ${{ github.workspace }}
+          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v2.pkl
         run: |
           set +e
           set -o pipefail
+          # IMPORTANT: the 50-minute clock begins only here.  Index construction
+          # has already completed and the full index must load from cache.
           timeout --signal=INT --kill-after=20s 50m \
-            python 'predator 8/predator 8.003-R3I4.py' prove setmm_ext.mm \
+            python 'predator 8/predator 8.004-R3I4-indexed.py' prove setmm_ext.mm \
               --label infmlen \
               --budget 50000000 \
               --max-depth 24 \
@@ -116,13 +140,13 @@ jobs:
         if: hashFiles('infmlen_p8_r3i4.mm') == ''
         run: |
           echo 'VERIFIER_RAN=NO' | tee -a halo0_r3i4_manifest.txt
-          echo 'No certificate file was emitted in this tranche.' | tee -a halo0_r3i4_manifest.txt
+          echo 'No certificate file was emitted in this 50-minute proof-search tranche.' | tee -a halo0_r3i4_manifest.txt
 
       - name: Upload run record
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: halo0-r3i4-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: halo0-r3i4-indexfixed-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             halo0_r3i4_manifest.txt
@@ -131,6 +155,7 @@ jobs:
             halo0_r3i4_df_infml_tree.log
             halo0_r3i4_infmlen_tree.log
             halo0_r3i4_selftest.log
+            halo0_r3i4_index.log
             halo0_r3i4_search.log
             halo0_r3i4_verifier.log
             infmlen_p8_r3i4.mm
