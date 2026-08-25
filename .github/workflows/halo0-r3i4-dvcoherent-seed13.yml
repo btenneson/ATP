@@ -1,4 +1,4 @@
-name: Halo(0) R3I4 — DV-coherent matched seed 13 — 50m
+name: Halo(0) R3I4 — DV-coherent matched seed 13 — 3h
 
 on:
   workflow_dispatch:
@@ -13,7 +13,9 @@ permissions:
 jobs:
   halo0-r3i4-seed13:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Allow preprocessing, verification, and artifact upload outside the
+    # three-hour proof-search clock.
+    timeout-minutes: 210
 
     steps:
       - name: Check out repository
@@ -37,14 +39,16 @@ jobs:
         run: |
           cat set.mm hyperreal.mm > setmm_ext.mm
           printf '%s\n' \
-            'EXPERIMENT: matched-seed comparison against Predator 8.006 run #13' \
+            'EXPERIMENT: matched-seed continuation against Predator 8.006 run #13' \
             'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
             'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
             'SEARCH: Predator 8.007 R3I4 DV-coherent FUTUREBANK' \
-            'CONTROL: compare to prior Predator 8.006 strategy-switch run using seed 13' \
+            'CONTROL: seed fixed at 13 to preserve the earlier matched-seed comparison' \
             'FIXED_SEED=13' \
-            'PURPOSE: isolate the effect of propagating full accumulated DV obligations through four-ply imagination and terminal imagined grounding' \
-            'UNCHANGED: target, corpus, proof calculus, strategy-switch controller, DV real-search gates, terminal-ground fallback, global budget, depth, agents, creativity, opener cap, max-open, 50-minute search clock, and verification boundary' \
+            'PURPOSE: test the same DV-coherent R3I4 mechanism for a substantially longer wall-clock tranche' \
+            'UNCHANGED ALGORITHMIC CONTROLS: target, corpus, proof calculus, strategy-switch controller, DV real-search gates, terminal-ground fallback, global expansion budget, depth, agents, creativity, opener cap, max-open, and verification boundary' \
+            'SEARCH CLOCK CHANGE: proof-search wall clock increased from 50 minutes to 180 minutes (3 hours)' \
+            'COMPARISON NOTE: only the first 50 minutes are directly time-matched to the prior 8.006 seed-13 run; later progress is an extended-budget continuation experiment' \
             'POLICY: target proof withheld; success requires emitted certificate plus independent verification' \
             > halo0_r3i4_manifest.txt
           cat setmm_sha256.txt >> halo0_r3i4_manifest.txt
@@ -89,7 +93,7 @@ jobs:
             --label infmlen 2>&1 | tee halo0_r3i4_index.log
           echo "INDEX_CACHE_HIT=${{ steps.index-cache.outputs.cache-hit }}" | tee -a halo0_r3i4_manifest.txt
 
-      - name: Blind matched-seed (3,4) Halo proof search — 50 minutes
+      - name: Blind matched-seed (3,4) Halo proof search — 3 hours
         id: search
         shell: bash
         env:
@@ -98,7 +102,8 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          timeout --signal=INT --kill-after=20s 50m \
+          # The proof-search clock starts here and runs for three hours.
+          timeout --signal=INT --kill-after=20s 180m \
             python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' prove setmm_ext.mm \
               --label infmlen \
               --budget 50000000 \
@@ -146,13 +151,13 @@ jobs:
         if: hashFiles('infmlen_p8_r3i4.mm') == ''
         run: |
           echo 'INDEPENDENT_VERIFIER=NOT_RUN' | tee -a halo0_r3i4_manifest.txt
-          echo 'No certificate file was emitted in this matched-seed 50-minute tranche.' | tee -a halo0_r3i4_manifest.txt
+          echo 'No certificate file was emitted in this matched-seed 3-hour tranche.' | tee -a halo0_r3i4_manifest.txt
 
       - name: Upload matched-seed run record
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: halo0-r3i4-dvcoherent-seed13-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: halo0-r3i4-dvcoherent-seed13-3h-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             halo0_r3i4_manifest.txt
