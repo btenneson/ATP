@@ -6,12 +6,14 @@ predator 8.003-R3I4.py, with engineering-only preprocessing changes:
 
 * the old eager serial assertion index is replaced by a full parallel,
   persistent cache;
-* set.mm parsing uses exact split-point acceleration; and
+* set.mm parsing uses exact split-point acceleration;
 * any proved theorem that remains pathological for generic parsing is
-  reconstructed exactly from its existing Metamath proof and token-checked.
+  reconstructed exactly from its existing Metamath proof and token-checked; and
+* the search is given the target declaration's active disjoint-variable set so
+  already-forced DV violations can be pruned before certificate emission.
 
-No pre-target logical assertion is omitted.  None of these changes alters proof
-semantics, the R3/I4 control law, target access, or Metamath verification.
+No pre-target logical assertion is omitted.  None of these changes adds a proof
+rule, reads the target proof, or relaxes Metamath verification.
 """
 from __future__ import annotations
 
@@ -40,7 +42,29 @@ import predator_index_cache_v4 as PIC
 PFP.install(P8.G)
 PIC.configure(P8)
 P8.Index = PIC.CachedParallelIndexV4
-P8.VERSION = "8.004-R3I4-indexed-prooftree-v4"
+P8.VERSION = "8.004-R3I4-indexed-prooftree-v4-dvaware"
+
+# Base Predator's prove() callback does not receive the target theorem frame.
+# Load only enough context before cmd_prove to expose the unrestricted $d pairs
+# active at the target declaration.  This is not target-proof access: only the
+# declaration frame is read, while mm.proofs[target] remains untouched by the
+# search.  The ordinary cmd_prove then reloads the file and runs unchanged.
+_ORIG_CMD_PROVE = P8.cmd_prove
+
+
+def _cmd_prove_with_dv_scope(a):
+    mm0 = P8.load(a.file, say=lambda _s: None)
+    if a.label in mm0.labels:
+        data = mm0.labels[a.label][1]
+        declared_dvs = data[0]
+        active_dvs = mm0.scope_dvs.get(a.label, declared_dvs)
+        R3I4.set_target_scope_dvs(active_dvs)
+    else:
+        R3I4.set_target_scope_dvs(None)
+    return _ORIG_CMD_PROVE(a)
+
+
+P8.cmd_prove = _cmd_prove_with_dv_scope
 
 
 def build_index(argv):
