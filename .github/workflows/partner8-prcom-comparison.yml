@@ -44,6 +44,10 @@ jobs:
       - name: Run equal-budget prcom comparison
         shell: bash
         run: |
+          # GitHub invokes bash with -e by default. Disable errexit here because
+          # Predator rc=1 means finite-resource UNKNOWN, which is experimental
+          # data rather than a workflow failure. We capture every condition's rc.
+          set +e
           set -uo pipefail
           mkdir -p partner8_prcom_results
           BUDGET=12000
@@ -77,12 +81,14 @@ jobs:
             echo "communicating_rc=${RC_COMM}"
           } | tee partner8_prcom_results/summary.txt
 
-          # Protocol failure is different from finite-resource UNKNOWN and must
-          # fail the experiment. UNKNOWN (rc=1) is a legitimate measurement.
-          if [ "${RC_SINGLE}" -eq 2 ] || [ "${RC_NONCOMM}" -eq 2 ] || [ "${RC_COMM}" -eq 2 ]; then
-            echo "PROTOCOL FAILURE detected" >&2
-            exit 2
-          fi
+          # rc=0 is verified success, rc=1 is finite-resource UNKNOWN.
+          # Anything else is an implementation/protocol failure.
+          for rc in "${RC_SINGLE}" "${RC_NONCOMM}" "${RC_COMM}"; do
+            if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+              echo "PROTOCOL FAILURE: unexpected rc=$rc" >&2
+              exit 2
+            fi
+          done
           exit 0
 
       - name: Independently verify any emitted certificates
