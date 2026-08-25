@@ -1,0 +1,168 @@
+name: Halo(0) R3I4 — DV-coherent matched seed 13 — 50m
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/halo0-r3i4-dvcoherent-seed13.yml
+
+permissions:
+  contents: read
+
+jobs:
+  halo0-r3i4-seed13:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download frozen set.mm baseline
+        run: |
+          SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480
+          curl -L --fail --retry 3 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          wc -c set.mm
+          sha256sum set.mm | tee setmm_sha256.txt
+
+      - name: Build Halo(0) extension and comparison manifest
+        run: |
+          cat set.mm hyperreal.mm > setmm_ext.mm
+          printf '%s\n' \
+            'EXPERIMENT: matched-seed comparison against Predator 8.006 run #13' \
+            'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
+            'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
+            'SEARCH: Predator 8.007 R3I4 DV-coherent FUTUREBANK' \
+            'CONTROL: compare to prior Predator 8.006 strategy-switch run using seed 13' \
+            'FIXED_SEED=13' \
+            'PURPOSE: isolate the effect of propagating full accumulated DV obligations through four-ply imagination and terminal imagined grounding' \
+            'UNCHANGED: target, corpus, proof calculus, strategy-switch controller, DV real-search gates, terminal-ground fallback, global budget, depth, agents, creativity, opener cap, max-open, 50-minute search clock, and verification boundary' \
+            'POLICY: target proof withheld; success requires emitted certificate plus independent verification' \
+            > halo0_r3i4_manifest.txt
+          cat setmm_sha256.txt >> halo0_r3i4_manifest.txt
+
+      - name: Formal syntax gate
+        run: |
+          set -o pipefail
+          python setmm_grammar.py roundtrip setmm_ext.mm --sample 3000 | tee halo0_r3i4_roundtrip.log
+          python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_r3i4_df_infml_tree.log
+          python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_r3i4_infmlen_tree.log
+
+      - name: R3I4 DV-coherent selftest gate
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          set -o pipefail
+          python -m py_compile 'predator 8/predator 8.003-R3I4.py'
+          python -m py_compile 'predator 8/predator 8.004-R3I4-indexed.py'
+          python -m py_compile 'predator 8/predator 8.005-R3I4-terminaldv.py'
+          python -m py_compile 'predator 8/predator 8.006-R3I4-strategy-switch.py'
+          python -m py_compile 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py'
+          python -m py_compile 'predator 8/predator_index_cache.py'
+          python -m py_compile 'predator 8/predator_index_cache_v4.py'
+          python -m py_compile 'predator 8/predator_fast_parse.py'
+          python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' selftest | tee halo0_r3i4_selftest.log
+
+      - name: Restore full assertion-index cache
+        id: index-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/halo0_infmlen_full_index_v4.pkl
+          key: halo0-infmlen-full-index-v4-0acf270b-${{ hashFiles('hyperreal.mm', 'setmm_grammar.py', 'predator 8/predator_index_cache.py', 'predator 8/predator_index_cache_v4.py', 'predator 8/predator_fast_parse.py') }}
+
+      - name: Build or validate full pre-target assertion index
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v4.pkl
+        run: |
+          set -o pipefail
+          mkdir -p .cache
+          python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' build-index setmm_ext.mm \
+            --label infmlen 2>&1 | tee halo0_r3i4_index.log
+          echo "INDEX_CACHE_HIT=${{ steps.index-cache.outputs.cache-hit }}" | tee -a halo0_r3i4_manifest.txt
+
+      - name: Blind matched-seed (3,4) Halo proof search — 50 minutes
+        id: search
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v4.pkl
+        run: |
+          set +e
+          set -o pipefail
+          timeout --signal=INT --kill-after=20s 50m \
+            python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' prove setmm_ext.mm \
+              --label infmlen \
+              --budget 50000000 \
+              --max-depth 24 \
+              --agents 8 \
+              --creativity 0.65 \
+              --opener-cap 96 \
+              --max-open 10 \
+              --seed 13 \
+              --progress 1000 \
+              --out infmlen_p8_r3i4.mm \
+            2>&1 | tee halo0_r3i4_search.log
+          rc=${PIPESTATUS[0]}
+          echo "SEARCH_RC=$rc" | tee -a halo0_r3i4_manifest.txt
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ]; then
+            echo 'OUTCOME=TIMEOUT_UNKNOWN' | tee -a halo0_r3i4_manifest.txt
+          elif [ "$rc" -eq 0 ]; then
+            echo 'OUTCOME=IN_PROCESS_VERIFIED_CANDIDATE' | tee -a halo0_r3i4_manifest.txt
+          elif [ "$rc" -eq 2 ]; then
+            echo 'OUTCOME=PROTOCOL_FAILURE_NOT_A_PROOF' | tee -a halo0_r3i4_manifest.txt
+          else
+            echo 'OUTCOME=UNKNOWN_OR_SEARCH_FAILURE' | tee -a halo0_r3i4_manifest.txt
+          fi
+          exit 0
+
+      - name: Verify emitted certificate independently in full context
+        if: hashFiles('infmlen_p8_r3i4.mm') != ''
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          cat setmm_ext.mm infmlen_p8_r3i4.mm > infmlen_p8_r3i4_context.mm
+          python metamath.py verify infmlen_p8_r3i4_context.mm --only chk \
+            2>&1 | tee halo0_r3i4_verifier.log
+          vrc=${PIPESTATUS[0]}
+          echo "VERIFIER_RC=$vrc" | tee -a halo0_r3i4_manifest.txt
+          if [ "$vrc" -eq 0 ]; then
+            echo 'INDEPENDENT_VERIFIER=ACCEPTED' | tee -a halo0_r3i4_manifest.txt
+          else
+            echo 'INDEPENDENT_VERIFIER=REJECTED' | tee -a halo0_r3i4_manifest.txt
+          fi
+          exit "$vrc"
+
+      - name: Record no-certificate outcome
+        if: hashFiles('infmlen_p8_r3i4.mm') == ''
+        run: |
+          echo 'INDEPENDENT_VERIFIER=NOT_RUN' | tee -a halo0_r3i4_manifest.txt
+          echo 'No certificate file was emitted in this matched-seed 50-minute tranche.' | tee -a halo0_r3i4_manifest.txt
+
+      - name: Upload matched-seed run record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: halo0-r3i4-dvcoherent-seed13-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          if-no-files-found: warn
+          path: |
+            halo0_r3i4_manifest.txt
+            setmm_sha256.txt
+            halo0_r3i4_roundtrip.log
+            halo0_r3i4_df_infml_tree.log
+            halo0_r3i4_infmlen_tree.log
+            halo0_r3i4_selftest.log
+            halo0_r3i4_index.log
+            halo0_r3i4_search.log
+            halo0_r3i4_verifier.log
+            infmlen_p8_r3i4.mm
+            infmlen_p8_r3i4_context.mm
