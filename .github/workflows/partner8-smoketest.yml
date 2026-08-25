@@ -25,8 +25,10 @@ jobs:
           python-version: '3.12'
 
       - name: Run eight-agent partner smoke test
+        shell: bash
         run: |
-          python experiments/partner8_smoketest.py | tee partner8_smoketest.log
+          set -o pipefail
+          python -u experiments/partner8_smoketest.py 2>&1 | tee partner8_smoketest.log
 
       - name: Upload smoke-test record
         if: always()
