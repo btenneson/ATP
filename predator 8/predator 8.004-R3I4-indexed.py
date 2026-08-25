@@ -5,13 +5,13 @@ This is the SAME operational (3,4) proof-search controller as
 predator 8.003-R3I4.py, with engineering-only preprocessing changes:
 
 * the old eager serial assertion index is replaced by a full parallel,
-  persistent cache; and
-* set.mm parsing uses an exact split-point acceleration that preserves every
-  legal parse while avoiding the combinatorial blow-up on huge stress-test
-  formulas.
+  persistent cache;
+* set.mm parsing uses exact split-point acceleration; and
+* any proved theorem that remains pathological for generic parsing is
+  reconstructed exactly from its existing Metamath proof and token-checked.
 
-Neither change alters proof semantics, the R3/I4 control law, target access, or
-Metamath verification.
+No pre-target logical assertion is omitted.  None of these changes alters proof
+semantics, the R3/I4 control law, target access, or Metamath verification.
 """
 from __future__ import annotations
 
@@ -31,21 +31,22 @@ P8 = R3I4.P8
 
 sys.path.insert(0, HERE)
 import predator_fast_parse as PFP
-import predator_index_cache as PIC
+import predator_index_cache_v4 as PIC
 
-# Install before any full-corpus indexing or proof search.  The replacement is
-# semantics-preserving: it only skips split points that cannot match the next
-# literal grammar token.
+# Install exact parsing acceleration before indexing/search.  V4 then uses the
+# existing Metamath proof as an exact syntax-tree source only for any proved
+# theorem that still exceeds bounded parser guards.  Final token equality is
+# mandatory, so the fallback fails closed if reconstruction disagrees.
 PFP.install(P8.G)
 PIC.configure(P8)
-P8.Index = PIC.CachedParallelIndex
-P8.VERSION = "8.004-R3I4-indexed-fastparse"
+P8.Index = PIC.CachedParallelIndexV4
+P8.VERSION = "8.004-R3I4-indexed-prooftree-v4"
 
 
 def build_index(argv):
     ap = argparse.ArgumentParser(
         prog="predator8-r3i4 build-index",
-        description="Build or validate the full cached pre-target assertion index")
+        description="Build or validate the complete cached pre-target assertion index")
     ap.add_argument("file")
     ap.add_argument("--label", required=True)
     a = ap.parse_args(argv)
@@ -54,7 +55,7 @@ def build_index(argv):
         raise SystemExit("PREDATOR_INDEX_CACHE must name the cache file")
 
     print("\n" + "=" * 74)
-    print("  PREDATOR 8 v%s  --  build full cached index for %s"
+    print("  PREDATOR 8 v%s  --  build complete cached index for %s"
           % (P8.VERSION, a.label))
     print("=" * 74 + "\n")
 
@@ -63,7 +64,7 @@ def build_index(argv):
     if a.label not in mm.labels:
         raise SystemExit("target label %s not found" % a.label)
     cut = mm.order.index(a.label)
-    idx = PIC.CachedParallelIndex(
+    idx = PIC.CachedParallelIndexV4(
         mm, by_tc, upto=cut, say=lambda s: print("  " + s))
     print("\n  INDEX READY: %s complete pre-target logical assertions\n"
           % f"{idx.n:,}")
