@@ -10,6 +10,7 @@ on:
       - 'predator 8/predator 8.004-R3I4-indexed.py'
       - 'predator 8/predator 8.005-R3I4-terminaldv.py'
       - 'predator 8/predator 8.006-R3I4-strategy-switch.py'
+      - 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py'
       - 'predator 8/predator_index_cache.py'
       - 'predator 8/predator_index_cache_v4.py'
       - 'predator 8/predator_fast_parse.py'
@@ -47,17 +48,19 @@ jobs:
             'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
             'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
             'POLICY: target proof withheld; success requires an emitted certificate accepted by an independent Metamath verification pass' \
-            'SEARCH: Predator 8.006 operational R3I4 with full index, DV safeguards, terminal-ground fallback, and saturation-triggered Level-3 strategy switching' \
+            'SEARCH: Predator 8.007 operational R3I4 with full index, DV safeguards, terminal-ground fallback, saturation-triggered Level-3 strategy switching, and DV-coherent FUTUREBANK' \
             'R=3: checked live metacontrol uses settlement-distance stagnation, duplicate pressure, and terminal-ground failure signals to change search strategy' \
-            'I=4: reasoned FUTUREBANK can simulate up to four further legal backward Metamath applications; saturated strategies may invoke I4 less often to spend more wall clock on real expansions' \
+            'I=4: reasoned FUTUREBANK can simulate up to four further legal backward Metamath applications; every imagined state now carries the complete accumulated real-search DV obligations' \
+            'IMAGINED CERTIFICATE GATE: a zero-goal imagined future receives a solved-within-4 bonus only if exact emission-time grounding leaves all accumulated DV obligations legal' \
+            'IMAGINATION FAIL-CLOSED: if the exact real-search DV context cannot be matched to the successor substitution, the imagination call supplies no progress or solved bonus' \
             'STRATEGIES: COMPASS -> CERTIFY -> DIVERSIFY -> LEAN; a genuine r_hat improvement resets the saturation clock and can return control toward COMPASS' \
             'FRONTIER SWITCH: on a strategy change, every surviving frontier state is re-keyed under the new target-generic policy; no frontier state is silently discarded' \
-            'DV GATES: already-forced Metamath DV violations are pruned during search; zero-goal branches are grounded exactly as emission will ground them and illegal terminals are rejected while the frontier continues' \
+            'DV GATES: already-forced Metamath DV violations are pruned during real search; zero-goal real branches are grounded exactly as emission will ground them and illegal terminals are rejected while the frontier continues' \
             'INDEX: FULL pre-target logical corpus; persistent cache; no assertion silently omitted' \
             'FAST PARSER: exact split-point pruning only' \
             'PROOF-TREE FALLBACK: proved parser outliers are reconstructed from their existing Metamath proof and must serialize exactly to the printed conclusion' \
             'CLOCK DISCIPLINE: preprocessing/index construction is outside the proof-search clock' \
-            'OUTER CONTROLS: target, global expansion budget, max-depth, agents, creativity, nominal opener-cap, max-open, and 50-minute wall clock remain fixed; 8.006 intentionally changes internal allocation when saturation is detected' \
+            'OUTER CONTROLS: target, global expansion budget, max-depth, agents, creativity, nominal opener-cap, max-open, and 50-minute wall clock remain fixed; 8.007 changes only certificate coherence of imagined reachability relative to 8.006' \
             'PROOF SEARCH WALL CLOCK: hard 50-minute tranche' \
             'VERIFICATION: candidate is checked first by the in-process CV and again in a context-complete file; no theorem claim if either rejects' \
             > halo0_r3i4_manifest.txt
@@ -70,7 +73,7 @@ jobs:
           python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_r3i4_df_infml_tree.log
           python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_r3i4_infmlen_tree.log
 
-      - name: R3I4 strategy-switch import and selftest gate
+      - name: R3I4 DV-coherent imagination import and selftest gate
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -79,10 +82,11 @@ jobs:
           python -m py_compile 'predator 8/predator 8.004-R3I4-indexed.py'
           python -m py_compile 'predator 8/predator 8.005-R3I4-terminaldv.py'
           python -m py_compile 'predator 8/predator 8.006-R3I4-strategy-switch.py'
+          python -m py_compile 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py'
           python -m py_compile 'predator 8/predator_index_cache.py'
           python -m py_compile 'predator 8/predator_index_cache_v4.py'
           python -m py_compile 'predator 8/predator_fast_parse.py'
-          python 'predator 8/predator 8.006-R3I4-strategy-switch.py' selftest | tee halo0_r3i4_selftest.log
+          python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' selftest | tee halo0_r3i4_selftest.log
 
       - name: Restore full assertion-index cache
         id: index-cache
@@ -98,7 +102,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p .cache
-          python 'predator 8/predator 8.006-R3I4-strategy-switch.py' build-index setmm_ext.mm \
+          python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' build-index setmm_ext.mm \
             --label infmlen 2>&1 | tee halo0_r3i4_index.log
           echo "INDEX_CACHE_HIT=${{ steps.index-cache.outputs.cache-hit }}" | tee -a halo0_r3i4_manifest.txt
           ls -lh .cache/halo0_infmlen_full_index_v4.pkl | tee -a halo0_r3i4_manifest.txt
@@ -113,7 +117,7 @@ jobs:
           set +e
           set -o pipefail
           timeout --signal=INT --kill-after=20s 50m \
-            python 'predator 8/predator 8.006-R3I4-strategy-switch.py' prove setmm_ext.mm \
+            python 'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' prove setmm_ext.mm \
               --label infmlen \
               --budget 50000000 \
               --max-depth 24 \
@@ -167,7 +171,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: halo0-r3i4-strategy-switch-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: halo0-r3i4-dvcoherent-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             halo0_r3i4_manifest.txt
