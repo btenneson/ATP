@@ -2,13 +2,16 @@
 """Predator 8.004-R3I4-indexed.
 
 This is the SAME operational (3,4) proof-search controller as
-predator 8.003-R3I4.py, with one engineering change: the old eager serial
-assertion index is replaced by a full parallel, persistent cache.
+predator 8.003-R3I4.py, with engineering-only preprocessing changes:
 
-The index change is deliberately outside proof semantics and outside the R3/I4
-control law.  It exists so a 50-minute Halo proof-search tranche is actually
-spent searching rather than reparsing tens of thousands of earlier Metamath
-conclusions.
+* the old eager serial assertion index is replaced by a full parallel,
+  persistent cache; and
+* set.mm parsing uses an exact split-point acceleration that preserves every
+  legal parse while avoiding the combinatorial blow-up on huge stress-test
+  formulas.
+
+Neither change alters proof semantics, the R3/I4 control law, target access, or
+Metamath verification.
 """
 from __future__ import annotations
 
@@ -27,10 +30,16 @@ spec.loader.exec_module(R3I4)
 P8 = R3I4.P8
 
 sys.path.insert(0, HERE)
+import predator_fast_parse as PFP
 import predator_index_cache as PIC
+
+# Install before any full-corpus indexing or proof search.  The replacement is
+# semantics-preserving: it only skips split points that cannot match the next
+# literal grammar token.
+PFP.install(P8.G)
 PIC.configure(P8)
 P8.Index = PIC.CachedParallelIndex
-P8.VERSION = "8.004-R3I4-indexed"
+P8.VERSION = "8.004-R3I4-indexed-fastparse"
 
 
 def build_index(argv):
