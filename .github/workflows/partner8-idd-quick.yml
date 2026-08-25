@@ -25,6 +25,7 @@ jobs:
         run: |
           curl -L --retry 3 --fail -o set.mm \
             https://raw.githubusercontent.com/metamath/set.mm/0acf270b982d31fa1cd34f075116e7784869a480/set.mm
+          sha256sum set.mm | tee partner8_idd_setmm_sha256.txt
       - name: Run communicating pair on idd
         shell: bash
         run: |
@@ -41,13 +42,36 @@ jobs:
           echo "rc=$RC" | tee partner8_idd_results/summary.txt
           if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then exit 2; fi
           exit 0
-      - name: Independently verify certificate
+      - name: Independently verify certificate with frozen context
         shell: bash
         run: |
           set -euo pipefail
           if [ -f partner8_idd_results/idd_communicating.mm ]; then
-            python metamath.py verify partner8_idd_results/idd_communicating.mm \
-              | tee partner8_idd_results/independent_verifier.log
+            python - <<'PY' | tee partner8_idd_results/independent_verifier.log
+          from metamath import MM, Toks, MMError
+
+          corpus = "set.mm"
+          cert = "partner8_idd_results/idd_communicating.mm"
+
+          mm = MM()
+          with open(corpus, "r", encoding="utf-8") as f:
+              mm.read(Toks(f.read()))
+          # metamath.py intentionally ignores $[ ... $] include directives,
+          # so preload the frozen corpus explicitly, then parse the certificate
+          # fragment into the same independent verifier instance.
+          with open(cert, "r", encoding="utf-8") as f:
+              mm.read(Toks(f.read()))
+
+          try:
+              verdict = mm.verify("chk")
+          except MMError as exc:
+              print(f"INDEPENDENT VERIFIER: FAILED -- {exc}")
+              raise SystemExit(1)
+
+          print(f"INDEPENDENT VERIFIER: {verdict.upper()}")
+          if verdict != "ok":
+              raise SystemExit(1)
+          PY
           else
             echo "No certificate emitted under finite resources." \
               | tee partner8_idd_results/independent_verifier.log
@@ -57,4 +81,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: partner8-idd-${{ github.run_id }}
-          path: partner8_idd_results
+          path: |
+            partner8_idd_results
+            partner8_idd_setmm_sha256.txt
