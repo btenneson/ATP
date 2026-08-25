@@ -18,8 +18,6 @@ permissions:
 jobs:
   halo0-r3i4:
     runs-on: ubuntu-latest
-    # Preprocessing is outside the proof-search clock.  The first successful
-    # run constructs the complete cache; subsequent runs restore it.
     timeout-minutes: 90
 
     steps:
@@ -46,17 +44,18 @@ jobs:
           printf '%s\n' \
             'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
             'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
-            'POLICY: target proof withheld; success requires an emitted certificate accepted by the independent Metamath verifier' \
+            'POLICY: target proof withheld; success requires an emitted certificate accepted by an independent Metamath verification pass' \
             'SEARCH: Predator 8.003 R3I4 control law through 8.004 indexed wrapper' \
             'R=3: checked live metacontrol over observable search state; FOCUS/BALANCED/ESCAPE from stagnation and duplicate pressure' \
             'I=4: up to four further legal backward Metamath applications simulated in FUTUREBANK before ranking strongest successors' \
+            'DV GATE: already-forced Metamath disjoint-variable violations are pruned during real search; unresolved metas are not guessed' \
             'INDEX: FULL pre-target logical corpus; persistent cache; no assertion silently omitted' \
             'FAST PARSER: exact split-point pruning only' \
             'PROOF-TREE FALLBACK: proved parser outliers are reconstructed from their existing Metamath proof and must serialize exactly to the printed conclusion' \
             'CLOCK DISCIPLINE: preprocessing/index construction is outside the proof-search clock' \
             'CONTROL MATCH: target, budget, max-depth, agents, creativity, opener-cap and max-open unchanged from the intended first R3I4 run' \
             'PROOF SEARCH WALL CLOCK: hard 50-minute tranche' \
-            'VERIFICATION: unchanged; imagination/metacontrol/indexing cannot alter certificate acceptance' \
+            'VERIFICATION: candidate is checked first by the in-process CV and again in a context-complete file; no theorem claim if either rejects' \
             > halo0_r3i4_manifest.txt
           cat setmm_sha256.txt >> halo0_r3i4_manifest.txt
 
@@ -107,7 +106,6 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          # The 50-minute clock begins only here, after the FULL index exists.
           timeout --signal=INT --kill-after=20s 50m \
             python 'predator 8/predator 8.004-R3I4-indexed.py' prove setmm_ext.mm \
               --label infmlen \
@@ -127,24 +125,39 @@ jobs:
           if [ "$rc" -eq 124 ] || [ "$rc" -eq 130 ]; then
             echo 'OUTCOME=TIMEOUT_UNKNOWN' | tee -a halo0_r3i4_manifest.txt
           elif [ "$rc" -eq 0 ]; then
-            echo 'OUTCOME=CANDIDATE_EMITTED' | tee -a halo0_r3i4_manifest.txt
+            echo 'OUTCOME=IN_PROCESS_VERIFIED_CANDIDATE' | tee -a halo0_r3i4_manifest.txt
+          elif [ "$rc" -eq 2 ]; then
+            echo 'OUTCOME=PROTOCOL_FAILURE_NOT_A_PROOF' | tee -a halo0_r3i4_manifest.txt
           else
-            echo 'OUTCOME=UNKNOWN_OR_PROTOCOL_FAILURE' | tee -a halo0_r3i4_manifest.txt
+            echo 'OUTCOME=UNKNOWN_OR_SEARCH_FAILURE' | tee -a halo0_r3i4_manifest.txt
           fi
           exit 0
 
-      - name: Verify emitted certificate independently
+      - name: Verify emitted certificate independently in full context
         if: hashFiles('infmlen_p8_r3i4.mm') != ''
         shell: bash
         run: |
+          set +e
           set -o pipefail
-          python metamath.py verify infmlen_p8_r3i4.mm 2>&1 | tee halo0_r3i4_verifier.log
-          echo 'VERIFIER_RAN=YES' | tee -a halo0_r3i4_manifest.txt
+          # Our compact verifier intentionally ignores $[ ... $] includes.
+          # Supply the exact same formal environment explicitly, append the
+          # candidate's `chk` theorem, and verify ONLY chk.
+          cat setmm_ext.mm infmlen_p8_r3i4.mm > infmlen_p8_r3i4_context.mm
+          python metamath.py verify infmlen_p8_r3i4_context.mm --only chk \
+            2>&1 | tee halo0_r3i4_verifier.log
+          vrc=${PIPESTATUS[0]}
+          echo "VERIFIER_RC=$vrc" | tee -a halo0_r3i4_manifest.txt
+          if [ "$vrc" -eq 0 ]; then
+            echo 'INDEPENDENT_VERIFIER=ACCEPTED' | tee -a halo0_r3i4_manifest.txt
+          else
+            echo 'INDEPENDENT_VERIFIER=REJECTED' | tee -a halo0_r3i4_manifest.txt
+          fi
+          exit "$vrc"
 
       - name: Record no-certificate outcome
         if: hashFiles('infmlen_p8_r3i4.mm') == ''
         run: |
-          echo 'VERIFIER_RAN=NO' | tee -a halo0_r3i4_manifest.txt
+          echo 'INDEPENDENT_VERIFIER=NOT_RUN' | tee -a halo0_r3i4_manifest.txt
           echo 'No certificate file was emitted in this 50-minute proof-search tranche.' | tee -a halo0_r3i4_manifest.txt
 
       - name: Upload run record
@@ -164,3 +177,4 @@ jobs:
             halo0_r3i4_search.log
             halo0_r3i4_verifier.log
             infmlen_p8_r3i4.mm
+            infmlen_p8_r3i4_context.mm
