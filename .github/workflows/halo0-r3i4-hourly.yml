@@ -8,6 +8,7 @@ on:
       - .github/workflows/halo0-r3i4-hourly.yml
       - 'predator 8/predator 8.003-R3I4.py'
       - 'predator 8/predator 8.004-R3I4-indexed.py'
+      - 'predator 8/predator 8.005-R3I4-terminaldv.py'
       - 'predator 8/predator_index_cache.py'
       - 'predator 8/predator_index_cache_v4.py'
       - 'predator 8/predator_fast_parse.py'
@@ -45,10 +46,10 @@ jobs:
             'TARGET: infmlen  |- ( f e. NPU -> ( Infml ` f ) ~~ RR )' \
             'SETMM_COMMIT=0acf270b982d31fa1cd34f075116e7784869a480' \
             'POLICY: target proof withheld; success requires an emitted certificate accepted by an independent Metamath verification pass' \
-            'SEARCH: Predator 8.003 R3I4 control law through 8.004 indexed wrapper' \
+            'SEARCH: Predator 8.003 R3I4 control law through 8.004 full-index wrapper and 8.005 terminal-ground DV fallback' \
             'R=3: checked live metacontrol over observable search state; FOCUS/BALANCED/ESCAPE from stagnation and duplicate pressure' \
             'I=4: up to four further legal backward Metamath applications simulated in FUTUREBANK before ranking strongest successors' \
-            'DV GATE: already-forced Metamath disjoint-variable violations are pruned during real search; unresolved metas are not guessed' \
+            'DV GATE: already-forced Metamath DV violations are pruned during search; at zero open goals, surviving metas are grounded exactly as certificate emission will ground them, all accumulated DVs are rechecked, illegal terminals are rejected, and the existing frontier continues' \
             'INDEX: FULL pre-target logical corpus; persistent cache; no assertion silently omitted' \
             'FAST PARSER: exact split-point pruning only' \
             'PROOF-TREE FALLBACK: proved parser outliers are reconstructed from their existing Metamath proof and must serialize exactly to the printed conclusion' \
@@ -66,17 +67,18 @@ jobs:
           python setmm_grammar.py tree setmm_ext.mm df-infml | tee halo0_r3i4_df_infml_tree.log
           python setmm_grammar.py tree setmm_ext.mm infmlen | tee halo0_r3i4_infmlen_tree.log
 
-      - name: R3I4 indexed import and selftest gate
+      - name: R3I4 terminal-DV import and selftest gate
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
           set -o pipefail
           python -m py_compile 'predator 8/predator 8.003-R3I4.py'
+          python -m py_compile 'predator 8/predator 8.004-R3I4-indexed.py'
+          python -m py_compile 'predator 8/predator 8.005-R3I4-terminaldv.py'
           python -m py_compile 'predator 8/predator_index_cache.py'
           python -m py_compile 'predator 8/predator_index_cache_v4.py'
           python -m py_compile 'predator 8/predator_fast_parse.py'
-          python -m py_compile 'predator 8/predator 8.004-R3I4-indexed.py'
-          python 'predator 8/predator 8.004-R3I4-indexed.py' selftest | tee halo0_r3i4_selftest.log
+          python 'predator 8/predator 8.005-R3I4-terminaldv.py' selftest | tee halo0_r3i4_selftest.log
 
       - name: Restore full assertion-index cache
         id: index-cache
@@ -92,7 +94,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p .cache
-          python 'predator 8/predator 8.004-R3I4-indexed.py' build-index setmm_ext.mm \
+          python 'predator 8/predator 8.005-R3I4-terminaldv.py' build-index setmm_ext.mm \
             --label infmlen 2>&1 | tee halo0_r3i4_index.log
           echo "INDEX_CACHE_HIT=${{ steps.index-cache.outputs.cache-hit }}" | tee -a halo0_r3i4_manifest.txt
           ls -lh .cache/halo0_infmlen_full_index_v4.pkl | tee -a halo0_r3i4_manifest.txt
@@ -107,7 +109,7 @@ jobs:
           set +e
           set -o pipefail
           timeout --signal=INT --kill-after=20s 50m \
-            python 'predator 8/predator 8.004-R3I4-indexed.py' prove setmm_ext.mm \
+            python 'predator 8/predator 8.005-R3I4-terminaldv.py' prove setmm_ext.mm \
               --label infmlen \
               --budget 50000000 \
               --max-depth 24 \
@@ -164,7 +166,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: halo0-r3i4-indexfixed-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          name: halo0-r3i4-terminaldv-${{ github.run_id }}-attempt-${{ github.run_attempt }}
           if-no-files-found: warn
           path: |
             halo0_r3i4_manifest.txt
