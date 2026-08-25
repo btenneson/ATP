@@ -9,6 +9,7 @@ on:
       - 'predator 8/predator 8.003-R3I4.py'
       - 'predator 8/predator 8.004-R3I4-indexed.py'
       - 'predator 8/predator_index_cache.py'
+      - 'predator 8/predator_index_cache_v4.py'
       - 'predator 8/predator_fast_parse.py'
 
 permissions:
@@ -49,8 +50,9 @@ jobs:
             'SEARCH: Predator 8.003 R3I4 control law through 8.004 indexed wrapper' \
             'R=3: checked live metacontrol over observable search state; FOCUS/BALANCED/ESCAPE from stagnation and duplicate pressure' \
             'I=4: up to four further legal backward Metamath applications simulated in FUTUREBANK before ranking strongest successors' \
-            'INDEX: FULL pre-target logical corpus; parallel parse; persistent cache; no assertion silently omitted' \
-            'FAST PARSER: exact split-point pruning only; a variable endpoint is considered only where the next literal grammar token can match' \
+            'INDEX: FULL pre-target logical corpus; persistent cache; no assertion silently omitted' \
+            'FAST PARSER: exact split-point pruning only' \
+            'PROOF-TREE FALLBACK: proved parser outliers are reconstructed from their existing Metamath proof and must serialize exactly to the printed conclusion' \
             'CLOCK DISCIPLINE: preprocessing/index construction is outside the proof-search clock' \
             'CONTROL MATCH: target, budget, max-depth, agents, creativity, opener-cap and max-open unchanged from the intended first R3I4 run' \
             'PROOF SEARCH WALL CLOCK: hard 50-minute tranche' \
@@ -72,6 +74,7 @@ jobs:
           set -o pipefail
           python -m py_compile 'predator 8/predator 8.003-R3I4.py'
           python -m py_compile 'predator 8/predator_index_cache.py'
+          python -m py_compile 'predator 8/predator_index_cache_v4.py'
           python -m py_compile 'predator 8/predator_fast_parse.py'
           python -m py_compile 'predator 8/predator 8.004-R3I4-indexed.py'
           python 'predator 8/predator 8.004-R3I4-indexed.py' selftest | tee halo0_r3i4_selftest.log
@@ -80,27 +83,27 @@ jobs:
         id: index-cache
         uses: actions/cache@v4
         with:
-          path: .cache/halo0_infmlen_full_index_v3.pkl
-          key: halo0-infmlen-full-index-v3-0acf270b-${{ hashFiles('hyperreal.mm', 'setmm_grammar.py', 'predator 8/predator_index_cache.py', 'predator 8/predator_fast_parse.py') }}
+          path: .cache/halo0_infmlen_full_index_v4.pkl
+          key: halo0-infmlen-full-index-v4-0acf270b-${{ hashFiles('hyperreal.mm', 'setmm_grammar.py', 'predator 8/predator_index_cache.py', 'predator 8/predator_index_cache_v4.py', 'predator 8/predator_fast_parse.py') }}
 
       - name: Build or validate full pre-target assertion index
         env:
           PYTHONPATH: ${{ github.workspace }}
-          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v3.pkl
+          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v4.pkl
         run: |
           set -o pipefail
           mkdir -p .cache
           python 'predator 8/predator 8.004-R3I4-indexed.py' build-index setmm_ext.mm \
             --label infmlen 2>&1 | tee halo0_r3i4_index.log
           echo "INDEX_CACHE_HIT=${{ steps.index-cache.outputs.cache-hit }}" | tee -a halo0_r3i4_manifest.txt
-          ls -lh .cache/halo0_infmlen_full_index_v3.pkl | tee -a halo0_r3i4_manifest.txt
+          ls -lh .cache/halo0_infmlen_full_index_v4.pkl | tee -a halo0_r3i4_manifest.txt
 
       - name: Blind operational (3,4) Halo proof search — 50 minutes
         id: search
         shell: bash
         env:
           PYTHONPATH: ${{ github.workspace }}
-          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v3.pkl
+          PREDATOR_INDEX_CACHE: ${{ github.workspace }}/.cache/halo0_infmlen_full_index_v4.pkl
         run: |
           set +e
           set -o pipefail
