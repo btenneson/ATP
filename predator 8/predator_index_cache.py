@@ -147,7 +147,7 @@ def _sequential_pass(pending, timeout_s, say):
 class CachedParallelIndex:
     """Drop-in replacement for Predator 8.001.Index."""
 
-    CACHE_VERSION = 2
+    CACHE_VERSION = 3
 
     def __init__(self, mm, by_tc, upto=None, say=None):
         if P8 is None:
@@ -230,7 +230,13 @@ class CachedParallelIndex:
 
         parsed = {}
         pending = list(jobs)
-        timeouts = (2.0, 15.0, 90.0)
+        # The first three guards handle the normal corpus.  set.mm deliberately
+        # contains a few enormous parser stress tests; after the exact split-
+        # point pruning was installed, quartfull remained the sole outlier just
+        # beyond the 90-second guard.  Give any final outlier one bounded
+        # 10-minute pass.  This is preprocessing only; it does not consume the
+        # declared 50-minute Halo proof-search tranche.
+        timeouts = (2.0, 15.0, 90.0, 600.0)
         for pass_no, timeout_s in enumerate(timeouts, 1):
             if not pending:
                 break
@@ -257,7 +263,7 @@ class CachedParallelIndex:
             labs = ", ".join(lab for lab, _ in pending[:20])
             raise RuntimeError(
                 "full index build refused to omit %d assertions still exceeding "
-                "the 90s parse guard: %s" % (len(pending), labs))
+                "the 600s final parse guard: %s" % (len(pending), labs))
 
         # Preserve declaration order exactly.  Search tie behaviour must not
         # depend on multiprocessing completion order.
