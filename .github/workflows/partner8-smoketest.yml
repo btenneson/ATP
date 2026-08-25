@@ -1,0 +1,36 @@
+name: Partner8 Architecture Smoke Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - experiments/partner8_smoketest.py
+      - .github/workflows/partner8-smoketest.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  partner8-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run eight-agent partner smoke test
+        run: |
+          python experiments/partner8_smoketest.py | tee partner8_smoketest.log
+
+      - name: Upload smoke-test record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner8-smoketest-${{ github.run_id }}
+          path: partner8_smoketest.log
