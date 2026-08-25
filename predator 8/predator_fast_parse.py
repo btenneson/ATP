@@ -39,8 +39,6 @@ def parse(tokens, typecode, by_tc, memo=None, all_parses=False, cap=4):
     vt = G.VARTYPE
     idx = G.RULEIDX
 
-    # Exact token-position index used only to skip split points that could not
-    # possibly be followed by the next literal grammar token.
     positions = defaultdict(list)
     for k, tok in enumerate(tokens):
         positions[tok].append(k)
@@ -109,10 +107,7 @@ def parse(tokens, typecode, by_tc, memo=None, all_parses=False, cap=4):
             return
 
         lo = i + 1
-        hi = j - tail  # inclusive, matching range(i+1, j-tail+1)
-
-        # Exact pruning: when the next grammar symbol is literal, the next
-        # unmatched input token must be exactly that literal.
+        hi = j - tail
         next_symbol = pat[p + 1]
         if next_symbol not in vt:
             ps = positions.get(next_symbol, ())
@@ -140,6 +135,8 @@ def parse(tokens, typecode, by_tc, memo=None, all_parses=False, cap=4):
 
 def install(grammar_module=None):
     """Install the accelerator into the already-loaded grammar module."""
+    global G
     gm = grammar_module or G
+    G = gm
     gm.parse = parse
     return gm
