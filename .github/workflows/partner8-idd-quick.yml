@@ -1,0 +1,60 @@
+name: Partner8 idd quick theorem
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/partner8-idd-quick.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  communicating-pair-idd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download frozen set.mm
+        run: |
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/0acf270b982d31fa1cd34f075116e7784869a480/set.mm
+      - name: Run communicating pair on idd
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p partner8_idd_results
+          PREDATOR_PARTNER_REPORT=100 \
+          python -u "predator 8/predator 8.010-partner-pair.py" prove set.mm \
+            --label idd --budget 3000 --max-depth 10 --max-open 8 \
+            --opener-cap 48 --creativity 0.55 --seed 2301 --progress 250 \
+            --agents 2 --out partner8_idd_results/idd_communicating.mm \
+            2>&1 | tee partner8_idd_results/idd.log
+          RC=${PIPESTATUS[0]}
+          echo "rc=$RC" | tee partner8_idd_results/summary.txt
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then exit 2; fi
+          exit 0
+      - name: Independently verify certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f partner8_idd_results/idd_communicating.mm ]; then
+            python metamath.py verify partner8_idd_results/idd_communicating.mm \
+              | tee partner8_idd_results/independent_verifier.log
+          else
+            echo "No certificate emitted under finite resources." \
+              | tee partner8_idd_results/independent_verifier.log
+          fi
+      - name: Upload record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner8-idd-${{ github.run_id }}
+          path: partner8_idd_results
