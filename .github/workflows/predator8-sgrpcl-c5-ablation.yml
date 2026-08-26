@@ -1,0 +1,148 @@
+name: Predator8 sgrpcl C5 control-awareness ablation
+
+on:
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: 'Global expansion budget'
+        required: false
+        default: '30000'
+      seed:
+        description: 'Random seed'
+        required: false
+        default: '2301'
+
+permissions:
+  contents: read
+
+jobs:
+  sgrpcl-c5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install --quiet numpy scipy scikit-learn joblib
+
+      - name: Reassemble recovered runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile Predator_8.001_FROZEN.py predator8_external_cv.py \
+            predator8_015_bidirectional_attention.py predator8_016_prcom_exactify.py \
+            predator8_017_fullgraph_exactify.py predator8_018_bailout.py \
+            predator8_019_selective_sink.py predator8_019_target.py \
+            predator8_020_c5_control.py predator8_020_target.py bounded_exactifier.py
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          echo "environment_sha256=${ENV_SHA}" | tee recovered_hashes_sgrpcl_c5.txt
+          test "${ENV_SHA}" = "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Record ablation manifest
+        shell: bash
+        run: |
+          cd 'predator 8/recovered8_002'
+          printf '%s\n' \
+            'TARGET=sgrpcl' \
+            'BASELINE=Predator 8.019 target-generic' \
+            'CHANGE=control-awareness axis only' \
+            'NATIVE=(5,3)' \
+            'SURGE=(5,4)' \
+            'TORPOR=(1,2)' \
+            'BRUTE=(0,0)' \
+            'CONTROL_OPERATION=C5=H_WEIGHT_0.50; C1=0.10; C0=0.00' \
+            'IMAGINATION=unchanged from 8.019 mode profiles' \
+            > sgrpcl_c5_manifest.txt
+
+      - name: Run theorem-authority tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python -m unittest -v test_predator8_016_prcom_exactify.py \
+            test_bounded_exactifier.py test_settlement_authority.py \
+            test_predator8_authority_adapter.py 2>&1 | tee p8_sgrpcl_c5_authority_tests.log
+
+      - name: Run sgrpcl C5 ablation
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          BUDGET='${{ github.event.inputs.budget }}'; BUDGET="${BUDGET:-30000}"
+          SEED='${{ github.event.inputs.seed }}'; SEED="${SEED:-2301}"
+          BRUTE=$(( BUDGET / 5 ))
+          python -u predator8_020_target.py set.mm \
+            --engine Predator_8.001_FROZEN.py --no-ml --label sgrpcl \
+            --budget "$BUDGET" --brute-reserve "$BRUTE" \
+            --max-depth 12 --max-open 8 --seed "$SEED" --creativity 0.55 \
+            --opener-cap 48 --progress 250 --frontier-limit 120000 \
+            --probe-depth 3 --probe-cap 2000 --probe-total-cap 4000 \
+            --probe-next-layer 30000 --out sgrpcl_p8_c5.mm \
+            2>&1 | tee sgrpcl_p8_c5.log
+          RC=${PIPESTATUS[0]}
+          echo "controller_rc=${RC}" | tee controller_rc_sgrpcl_c5.txt
+          if [ "$RC" -eq 2 ]; then exit 2; fi
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then exit 2; fi
+          exit 0
+
+      - name: Independent certificate check
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          if [ -f sgrpcl_p8_c5.mm ]; then
+            python -u predator8_external_cv.py set.mm --target sgrpcl \
+              --certificate sgrpcl_p8_c5.mm | tee independent_cv_sgrpcl_c5.log
+          else
+            echo 'No certificate emitted.' | tee independent_cv_sgrpcl_c5.log
+          fi
+
+      - name: Summarize telemetry
+        if: always()
+        shell: bash
+        run: |
+          cd 'predator 8/recovered8_002'
+          grep -E 'C-AWARENESS|H-IMPROVE|SATURATE|INFO-GAIN|EXACTIFY|BAILOUT|SURGE|TORPOR|BRUTE|CONTROL SUMMARY|OUTCOME|candidate found' sgrpcl_p8_c5.log 2>/dev/null || true
+          cat independent_cv_sgrpcl_c5.log 2>/dev/null || true
+
+      - name: Upload experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-sgrpcl-c5-${{ github.run_id }}
+          if-no-files-found: ignore
+          path: |
+            predator 8/recovered8_002/recovered_hashes_sgrpcl_c5.txt
+            predator 8/recovered8_002/sgrpcl_c5_manifest.txt
+            predator 8/recovered8_002/p8_sgrpcl_c5_authority_tests.log
+            predator 8/recovered8_002/sgrpcl_p8_c5.log
+            predator 8/recovered8_002/controller_rc_sgrpcl_c5.txt
+            predator 8/recovered8_002/independent_cv_sgrpcl_c5.log
+            predator 8/recovered8_002/sgrpcl_p8_c5.mm
