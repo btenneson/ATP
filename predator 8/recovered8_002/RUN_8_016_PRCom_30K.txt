@@ -1,0 +1,6 @@
+Predator 8.016 recovered-ML + ATTENTION/proximity alarm + theorem-grade local exactification.
+Target: prcom
+Global expansion budget: 30000
+Brute reserve: 6000
+Seed: 2301
+Historical environment and model hashes must pass before search.
