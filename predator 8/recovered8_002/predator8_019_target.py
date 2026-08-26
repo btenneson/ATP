@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """Target-generic runner for the frozen Predator 8.019 controller.
 
-This file does not modify the historical 8.019 prcom implementation or its
-recorded blob SHA.  It reuses the same selective basin controller and full-goal
-exactifier on an arbitrary pre-existing Metamath theorem label.
+This file reuses the selective basin controller and full-goal exactifier on an
+arbitrary pre-existing Metamath theorem label.
+
+Zero-gate invariant:
+  * H=0 remains a necessary condition for settlement.
+  * H=0 is never sufficient by itself.
+  * a zero-goal candidate may halt search only after both the in-process
+    Metamath check and the independent external checker accept its certificate.
+  * rejected candidate zeros are logged as FALSE-ZERO and search continues
+    inside the same declared resource budget.
 
 Two ranking modes are supported:
   * --model PATH: requires a target-clean RuntimePolicy whose metadata attests
     cutoff_before == target, target_proof_used == False, downstream_used == False.
-  * --no-ml: leakage-safe zero learned scores.  This preserves 8.019's control
-    logic but is NOT the recovered 8.002 learned search distribution.
+  * --no-ml: leakage-safe zero learned scores.
 
-In both modes only assertions strictly before the target are search-visible and
-the target proof is guarded from access.  Any emitted certificate is checked
-in-process and by the independent external checker.
+Only assertions strictly before the target are search-visible and the target
+proof is guarded from access.
 """
 from __future__ import annotations
 
@@ -135,8 +140,32 @@ def main():
         print("  model sha256: %s" % model_desc)
 
     print("  environment sha256: %s" % B.sha256(environment))
+    print("  ZERO INVARIANT: settlement => H=0; H=0 alone never halts search")
     target_data = mm.labels[a.label][1]
     probe_ctx = F.make_full_probe_context(E, index, mm, target_data, cutoff)
+
+    gate_path = Path(str(a.out) + ".zero_gate.mm")
+
+    def certificate_gate(candidate):
+        """Return (accepted, detail) for a candidate-zero proof object."""
+        try:
+            verdict, proof, emitted = verify_emit(
+                E, mm, cutoff, a.label, candidate, environment,
+                gate_path, model_desc)
+        except Exception as exc:
+            return False, "in-process rejection: %s: %s" % (type(exc).__name__, exc)
+        if verdict != "ok":
+            return False, "in-process verdict=%s" % verdict
+
+        external = subprocess.run(
+            [sys.executable, str(ROOT / "predator8_external_cv.py"),
+             str(environment), "--target", a.label,
+             "--certificate", str(emitted)],
+            cwd=str(ROOT), text=True, capture_output=True, check=False)
+        detail = (external.stdout + external.stderr).strip()
+        if external.returncode:
+            return False, "external rejection: %s" % detail
+        return True, "dual verifier accepted; proof steps=%s" % f"{len(proof):,}"
 
     original = mm.proofs
     mm.proofs = B.GuardedProofs(original, a.label)
@@ -150,7 +179,8 @@ def main():
             opener_cap=a.opener_cap, progress=a.progress,
             frontier_limit=a.frontier_limit, probe_depth=a.probe_depth,
             probe_cap=a.probe_cap, probe_total_cap=a.probe_total_cap,
-            probe_next_layer=a.probe_next_layer)
+            probe_next_layer=a.probe_next_layer,
+            candidate_gate=certificate_gate)
         bused = 0
         brute_depth = None
         if result is None:
@@ -160,6 +190,7 @@ def main():
             result, bused, brute_depth = B.brute_iddfs(
                 E, goal, index, remaining, a.max_depth, a.max_open,
                 progress=a.progress)
+            # Brute results are also only candidate zeros until certified below.
     finally:
         mm.proofs = original
 
@@ -175,13 +206,21 @@ def main():
               % (f"{total:,}", elapsed))
         return 1
 
-    verdict, proof, output = verify_emit(
-        E, mm, cutoff, a.label, result, environment, a.out, model_desc)
+    # Guided candidates reaching here have already passed the dual zero gate.
+    # A brute candidate has not, so every final result is checked again here.
+    try:
+        verdict, proof, output = verify_emit(
+            E, mm, cutoff, a.label, result, environment, a.out, model_desc)
+    except Exception as exc:
+        print("  FINAL CANDIDATE REJECTED: %s: %s" % (type(exc).__name__, exc))
+        print("  OUTCOME: UNKNOWN; no certified settlement")
+        return 1
+
     print("  candidate found after total %s expansions, %.1fs; proof steps=%s; in-process CV=%s"
           % (f"{total:,}", elapsed, f"{len(proof):,}", verdict.upper()))
     if verdict != "ok":
-        print("  OUTCOME: PROTOCOL FAILURE")
-        return 2
+        print("  OUTCOME: UNKNOWN; no certified settlement")
+        return 1
 
     external = subprocess.run(
         [sys.executable, str(ROOT / "predator8_external_cv.py"),
@@ -189,8 +228,8 @@ def main():
         cwd=str(ROOT), text=True, capture_output=True, check=False)
     print((external.stdout + external.stderr).strip())
     if external.returncode:
-        print("  OUTCOME: PROTOCOL FAILURE")
-        return 2
+        print("  OUTCOME: UNKNOWN; final certificate rejected")
+        return 1
     print("  OUTCOME: VERIFIED PROOF")
     return 0
 
