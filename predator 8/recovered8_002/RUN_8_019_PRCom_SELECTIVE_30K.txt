@@ -1,0 +1,6 @@
+Trigger Predator 8.019 selective-kitchen-sink prcom experiment.
+
+Global budget: 30,000 expansions.
+Target proof remains guarded/unavailable to search.
+Same historical set.mm hash and recovered 8.002 ML policy as 8.018.
+Key additions: per-basin accounting, adaptive 1%-5% patience, earned SATURATE, false-proximity patience reduction, persistent bailout memory, progress-per-cost telemetry.
