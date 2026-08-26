@@ -15,7 +15,7 @@ permissions:
 jobs:
   prcom-control34-comparison:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       PYTHONPATH: ${{ github.workspace }}
     steps:
@@ -50,7 +50,7 @@ jobs:
           set +e
           set -uo pipefail
           mkdir -p control34_prcom_results
-          BUDGET=12000
+          BUDGET=30000
           COMMON="--label prcom --budget ${BUDGET} --max-depth 12 --max-open 8 --opener-cap 64 --creativity 0.55 --seed 2301 --progress 500"
 
           echo "=== A: Partner 8.011 H-goal (1,3)+(2,4), cap ${BUDGET} ===" | tee control34_prcom_results/hgoal_8011.log
