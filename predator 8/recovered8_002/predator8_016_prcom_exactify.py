@@ -49,7 +49,7 @@ class ProbeContext:
             check = E.MM()
             check.labels = dict(self.mm.labels)
             check.order = list(self.mm.order)
-            check.proofs = dict(self.mm.proofs)
+            check.proofs = {}
             check.constants, check.variables = self.mm.constants, self.mm.variables
             check.scope_dvs = dict(self.mm.scope_dvs)
             check.labels["__p8_016_probe__"] = ("$p", self.target_data)
@@ -111,7 +111,8 @@ def make_probe_context(E, index, mm, target_data, cutoff):
     fvar, fallback = B.formal_variables(E, mm, cutoff)
     return ProbeContext(E, index, mm, target_data, fvar, fallback)
 
-def run_probe(ctx: ProbeContext, node, max_depth: int, max_expansions: int):
+def run_probe(ctx: ProbeContext, node, max_depth: int, max_expansions: int,
+              max_next_layer: int = 30000):
     return bounded_bfs_exactify(
         ProbeState(node=node),
         all_successors=ctx.all_successors,
@@ -119,6 +120,7 @@ def run_probe(ctx: ProbeContext, node, max_depth: int, max_expansions: int):
         key=lambda s: s,
         max_depth=max_depth,
         max_expansions=max_expansions,
+        max_next_layer=max_next_layer,
         completeness_evidence=(
             "all assertion-head-compatible candidates enumerated; each candidate "
             "subjected to actual unification; no opener cap/ranker/policy pruning; "
@@ -130,7 +132,8 @@ def adaptive_guided_exactify(E, goal, index, policy, budget, max_depth, max_open
                              seed, probe_ctx: ProbeContext,
                              creativity=0.55, opener_cap=48, progress=250,
                              frontier_limit=120000, probe_depth=3,
-                             probe_cap=2000, probe_total_cap=4000, say=print):
+                             probe_cap=2000, probe_total_cap=4000,
+                             probe_next_layer=30000, say=print):
     rng = random.Random(int(seed) + 2 * 1000003)
     local_use = defaultdict(int)
     shared_use = defaultdict(int)
@@ -196,7 +199,8 @@ def adaptive_guided_exactify(E, goal, index, policy, budget, max_depth, max_open
                     say("      [PROXIMITY-ALARM] launching complete local BFS probe #%d "
                         "depth<=%d cap=%s" %
                         (probes, probe_depth, f"{remaining_probe:,}"))
-                    pr = run_probe(probe_ctx, node, probe_depth, remaining_probe)
+                    pr = run_probe(probe_ctx, node, probe_depth, remaining_probe,
+                                   max_next_layer=probe_next_layer)
                     probe_used_total += pr.expanded
                     total_used = exp + probe_used_total
                     if pr.exact_h is not None:
@@ -210,6 +214,12 @@ def adaptive_guided_exactify(E, goal, index, policy, budget, max_depth, max_open
                             return (B.reconstruct(witness.closed_witness), total_used,
                                     best_h, transitions, "exactifier-settled")
                     else:
+                        if pr.lower_bound - nh > 0.5:
+                            say("      [HALF-GAP-DENIED] certified H>=%d versus H_hat=%.3f; "
+                                "local estimator error is already >1/2"
+                                % (pr.lower_bound, nh))
+                            transitions.append((total_used, mode, mode,
+                                                "HALF-GAP-DENIED by certified lower bound"))
                         say("      [EXACTIFY] no settlement in certified shells; H>=%d "
                             "for snapshot; checked_through=%d complete=%s probe_exp=%s"
                             % (pr.lower_bound, pr.checked_through_depth,
@@ -357,6 +367,7 @@ def main():
     ap.add_argument("--probe-depth", type=int, default=3)
     ap.add_argument("--probe-cap", type=int, default=2000)
     ap.add_argument("--probe-total-cap", type=int, default=4000)
+    ap.add_argument("--probe-next-layer", type=int, default=30000)
     ap.add_argument("--out", default="prcom_p8_016.mm")
     a = ap.parse_args()
     if a.label != "prcom":
@@ -398,7 +409,8 @@ def main():
             probe_ctx=probe_ctx, creativity=a.creativity,
             opener_cap=a.opener_cap, progress=a.progress,
             frontier_limit=a.frontier_limit, probe_depth=a.probe_depth,
-            probe_cap=a.probe_cap, probe_total_cap=a.probe_total_cap)
+            probe_cap=a.probe_cap, probe_total_cap=a.probe_total_cap,
+            probe_next_layer=a.probe_next_layer)
         bused = 0
         brute_depth = None
         if result is None:
