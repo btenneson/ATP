@@ -14,6 +14,12 @@ clear expected search benefit:
 * false-proximity evidence shortens patience instead of attracting more search.
 
 The target theorem/proof remains guarded exactly as in 8.015-8.018.
+
+Candidate-gate rule (added after the sgrpcl C5 false-zero experiment): H=0 is a
+necessary condition for settlement, but an apparent zero never halts search when
+a candidate_gate is supplied unless that gate certifies the reconstructed proof.
+Rejected zeros are logged as FALSE-ZERO and search continues within the same
+resource budget.
 """
 from __future__ import annotations
 
@@ -60,7 +66,8 @@ def adaptive_guided_selective(E, goal, index, policy, budget, max_depth, max_ope
                               creativity=0.55, opener_cap=48, progress=250,
                               frontier_limit=120000, probe_depth=3,
                               probe_cap=2000, probe_total_cap=4000,
-                              probe_next_layer=30000, say=print):
+                              probe_next_layer=30000, say=print,
+                              candidate_gate=None):
     B = P.B
     rng = random.Random(int(seed) + 2 * 1000003)
     local_use = defaultdict(int)
@@ -70,6 +77,7 @@ def adaptive_guided_selective(E, goal, index, policy, budget, max_depth, max_ope
     tie = exp = 0
     probe_used_total = 0
     probes = 0
+    false_zeros = 0
     seen = set()
     t0 = time.perf_counter()
 
@@ -102,6 +110,29 @@ def adaptive_guided_selective(E, goal, index, policy, budget, max_depth, max_ope
         "coord=%s h_hat=%.3f patience=[%s,%s] base=%s"
         % (B.COORD[mode], best_h, f"{min_patience:,}",
            f"{max_patience:,}", f"{base_patience:,}"))
+    if candidate_gate is not None:
+        say("    [ZERO-GATE] H=0 is necessary but not sufficient; only a certified "
+            "candidate may halt search")
+
+    def accept_zero(result, source, total_used, basin):
+        nonlocal false_zeros
+        if candidate_gate is None:
+            return True
+        say("      [CANDIDATE-ZERO] source=%s total=%s basin=%s; verifying certificate"
+            % (source, f"{total_used:,}", basin or "<root>"))
+        try:
+            accepted, detail = candidate_gate(result)
+        except Exception as exc:
+            accepted, detail = False, "%s: %s" % (type(exc).__name__, exc)
+        if accepted:
+            say("      [CERTIFIED-ZERO] certificate accepted; settlement gate OPEN")
+            transitions.append((total_used, mode, "CERTIFIED-ZERO", str(detail)))
+            return True
+        false_zeros += 1
+        say("      [FALSE-ZERO] #%d rejected: %s; search continues"
+            % (false_zeros, detail))
+        transitions.append((total_used, mode, "FALSE-ZERO", str(detail)))
+        return False
 
     while frontier and (exp + probe_used_total) < budget:
         priority, _, node = heapq.heappop(frontier)
@@ -186,8 +217,10 @@ def adaptive_guided_selective(E, goal, index, policy, budget, max_depth, max_ope
                                             "CERTIFIED exact shell"))
                         witness = pr.witness
                         if witness is not None and witness.closed_witness is not None:
-                            return (B.reconstruct(witness.closed_witness), total_used,
-                                    best_h, transitions, "exactifier-settled")
+                            candidate = B.reconstruct(witness.closed_witness)
+                            if accept_zero(candidate, "exactifier", total_used, basin):
+                                return (candidate, total_used, best_h,
+                                        transitions, "exactifier-settled")
                     else:
                         old_lb = st["best_lb"]
                         if pr.lower_bound > old_lb:
@@ -282,16 +315,19 @@ def adaptive_guided_selective(E, goal, index, policy, budget, max_depth, max_ope
             ast = basin_stats[active_basin] if active_basin else None
             say("      [GUIDED] guided=%s probe=%s total=%s open=%d "
                 "best_h=%.3f mode=%s saturate=%s frontier=%s "
-                "bailouts=%d blocked=%d active_utility=%.6f elapsed=%.1fs"
+                "bailouts=%d blocked=%d false_zeros=%d active_utility=%.6f elapsed=%.1fs"
                 % (f"{exp:,}", f"{probe_used_total:,}",
                    f"{exp + probe_used_total:,}", len(node.goals), best_h, mode,
                    "ON" if saturating else "off", f"{len(frontier):,}",
-                   bailouts, len(blocked_prefixes),
+                   bailouts, len(blocked_prefixes), false_zeros,
                    _utility(ast) if ast is not None else 0.0,
                    time.perf_counter() - t0))
 
         if not node.goals:
-            return B.reconstruct(node), exp + probe_used_total, best_h, transitions, "settled"
+            candidate = B.reconstruct(node)
+            if accept_zero(candidate, "guided", exp + probe_used_total, basin):
+                return candidate, exp + probe_used_total, best_h, transitions, "settled"
+            continue
         if node.depth >= max_depth or len(node.goals) > max_open:
             continue
 
