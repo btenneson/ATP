@@ -1,0 +1,3 @@
+Trigger Predator 8.018 prcom 30k self-aware bailout experiment.
+No target theorem/certificate is seeded into BANK.
+Initial bailout hyperparameter: 3% basin tranche of guided budget.
