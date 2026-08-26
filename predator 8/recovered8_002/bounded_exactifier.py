@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Bounded exhaustive shell exactification for unit-cost settlement graphs.
 
-A Predator integration must pass an `all_successors` callback that enumerates
-EVERY legal proof successor in the exact graph used by the theorem. Pruned,
-opener-capped, or policy-restricted successors are not enough unless the claimed
-horizon is explicitly the corresponding restricted horizon.
+This is deliberately generic.  A Predator integration must pass an `all_successors`
+callback that enumerates EVERY legal proof successor in the exact graph used by
+the theorem.  Pruned/opener-capped/policy-restricted successors are not enough
+unless the claimed horizon is explicitly the corresponding restricted horizon.
 """
 from __future__ import annotations
 
@@ -30,9 +30,15 @@ class ProbeResult(Generic[T]):
     def interval(self) -> HorizonInterval:
         if self.exact_h is not None:
             return HorizonInterval(
-                float(self.exact_h), float(self.exact_h), self.evidence
+                float(self.exact_h),
+                float(self.exact_h),
+                self.evidence,
             )
-        return HorizonInterval(float(self.lower_bound), math.inf, self.evidence)
+        return HorizonInterval(
+            float(self.lower_bound),
+            math.inf,
+            self.evidence,
+        )
 
 
 def bounded_bfs_exactify(
@@ -44,28 +50,30 @@ def bounded_bfs_exactify(
     max_depth: int,
     completeness_evidence: str,
     max_expansions: Optional[int] = None,
+    max_next_layer: Optional[int] = None,
 ) -> ProbeResult[T]:
     """Exhaustively inspect settlement shells through `max_depth`.
 
     If settlement first appears in BFS layer r, exact H=r.
     If every layer through m=max_depth is exhausted with no settlement, H>=m+1.
-    If an expansion cap interrupts the probe after fully checking layer d, only
-    H>=d+1 is certified.
+    If an expansion cap or next-layer memory guard interrupts the probe after
+    fully checking layer d, only H>=d+1 is certified.
     """
     if max_depth < 0:
         raise ValueError("max_depth must be nonnegative")
     if max_expansions is not None and max_expansions < 0:
         raise ValueError("max_expansions must be nonnegative")
+    if max_next_layer is not None and max_next_layer < 1:
+        raise ValueError("max_next_layer must be positive")
     if not completeness_evidence or not completeness_evidence.strip():
-        raise ValueError(
-            "exactification requires explicit successor-completeness evidence"
-        )
+        raise ValueError("exactification requires explicit successor-completeness evidence")
 
     seen = {key(start)}
     layer = [start]
     expanded = 0
 
     for depth in range(max_depth + 1):
+        # The entire current layer is known before any expansion of this layer.
         for node in layer:
             if is_settled(node):
                 return ProbeResult(
@@ -96,6 +104,8 @@ def bounded_bfs_exactify(
             )
 
         if max_expansions is not None and expanded + len(layer) > max_expansions:
+            # We have checked every state in this layer for settlement, but have
+            # not completely generated the next layer.
             return ProbeResult(
                 exact_h=None,
                 lower_bound=depth + 1,
@@ -118,8 +128,26 @@ def bounded_bfs_exactify(
                     continue
                 seen.add(k)
                 nxt.append(child)
+                if max_next_layer is not None and len(nxt) >= max_next_layer:
+                    # Shell `depth` was fully known and checked before expansion.
+                    # We are interrupting only construction of shell depth+1, so
+                    # the rigorous conclusion H >= depth+1 remains valid.
+                    return ProbeResult(
+                        exact_h=None,
+                        lower_bound=depth + 1,
+                        checked_through_depth=depth,
+                        expanded=expanded,
+                        complete_to_requested_depth=False,
+                        witness=None,
+                        evidence=(
+                            f"BFS next-layer memory guard fired while constructing "
+                            f"shell {depth + 1} after fully checking shell {depth}; "
+                            f"therefore H>={depth + 1}; " + completeness_evidence
+                        ),
+                    )
         layer = nxt
 
+        # Empty next layer means the reachable component has been exhausted.
         if not layer:
             return ProbeResult(
                 exact_h=None,
@@ -129,7 +157,7 @@ def bounded_bfs_exactify(
                 complete_to_requested_depth=True,
                 witness=None,
                 evidence=(
-                    "complete BFS exhausted reachable component with no settlement "
+                    f"complete BFS exhausted reachable component with no settlement "
                     f"after shell {depth}; H is unreachable/infinite in this graph; "
                     + completeness_evidence
                 ),
@@ -148,7 +176,7 @@ def interval_optimal_lock(successors: Sequence[IntervalSuccessor]) -> AuthorityD
     """Certify an optimal successor using interval dominance.
 
     If U_i <= L_j for every competing j, successor i is guaranteed to minimize
-    true H (ties are allowed when equality occurs). In a reachable unit-cost
+    true H (ties are allowed when equality occurs).  In a reachable unit-cost
     proof graph, any such minimizing successor is geodesic.
     """
     if not successors:
@@ -158,9 +186,7 @@ def interval_optimal_lock(successors: Sequence[IntervalSuccessor]) -> AuthorityD
     for i, s in enumerate(successors):
         if math.isinf(s.interval.upper):
             continue
-        others = [
-            t.interval.lower for j, t in enumerate(successors) if j != i
-        ]
+        others = [t.interval.lower for j, t in enumerate(successors) if j != i]
         if not others or s.interval.upper <= min(others):
             chosen.append(s.key)
 
