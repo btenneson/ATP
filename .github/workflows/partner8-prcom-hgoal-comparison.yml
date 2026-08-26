@@ -1,0 +1,119 @@
+name: Partner8 prcom H-goal comparison
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - predator 8/predator 8.010-partner-pair.py
+      - predator 8/predator 8.011-H-goal.py
+      - .github/workflows/partner8-prcom-hgoal-comparison.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prcom-hgoal-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download frozen set.mm
+        run: |
+          curl -L --retry 3 --fail \
+            -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/0acf270b982d31fa1cd34f075116e7784869a480/set.mm
+          sha256sum set.mm | tee hgoal_setmm_sha256.txt
+
+      - name: Compile and selftest engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile "predator 8/predator 8.001.py"
+          python -m py_compile "predator 8/predator 8.010-partner-pair.py"
+          python -m py_compile "predator 8/predator 8.011-H-goal.py"
+          python -u "predator 8/predator 8.001.py" selftest | tee hgoal_base_selftest.log
+
+      - name: Run equal-budget prcom comparison
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p hgoal_prcom_results
+          BUDGET=12000
+          COMMON="--label prcom --budget ${BUDGET} --max-depth 12 --max-open 8 --opener-cap 64 --creativity 0.55 --seed 2301 --progress 500"
+
+          echo "=== A: Partner 8.010 baseline, cap ${BUDGET} ===" | tee hgoal_prcom_results/baseline.log
+          PREDATOR_PARTNER_REPORT=250 \
+          python -u "predator 8/predator 8.010-partner-pair.py" prove set.mm $COMMON \
+            --agents 2 --out hgoal_prcom_results/prcom_8010.mm \
+            2>&1 | tee -a hgoal_prcom_results/baseline.log
+          RC_BASE=${PIPESTATUS[0]}
+
+          echo "=== B: Partner 8.011 H-goal, same cap ${BUDGET} ===" | tee hgoal_prcom_results/hgoal.log
+          PREDATOR_PARTNER_REPORT=250 \
+          PREDATOR_H_WEIGHT=0.30 \
+          PREDATOR_H_SURGE=4.0 \
+          PREDATOR_H_TOKEN_WEIGHT=0.015 \
+          python -u "predator 8/predator 8.011-H-goal.py" prove set.mm $COMMON \
+            --agents 2 --out hgoal_prcom_results/prcom_8011_hgoal.mm \
+            2>&1 | tee -a hgoal_prcom_results/hgoal.log
+          RC_H=${PIPESTATUS[0]}
+
+          {
+            echo "target=prcom"
+            echo "frozen_setmm=0acf270b982d31fa1cd34f075116e7784869a480"
+            echo "global_expansion_cap_each=${BUDGET}"
+            echo "baseline_8010_rc=${RC_BASE}"
+            echo "hgoal_8011_rc=${RC_H}"
+            echo "h_weight=0.30"
+            echo "h_surge=4.0"
+            echo "h_token_weight=0.015"
+          } | tee hgoal_prcom_results/summary.txt
+
+          for rc in "${RC_BASE}" "${RC_H}"; do
+            if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+              echo "PROTOCOL FAILURE: unexpected rc=$rc" >&2
+              exit 2
+            fi
+          done
+          exit 0
+
+      - name: Independently verify any emitted certificates
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in hgoal_prcom_results/*.mm; do
+            [ -e "$f" ] || continue
+            echo "VERIFYING $f"
+            python metamath.py verify "$f" | tee -a hgoal_prcom_results/independent_verifier.log
+          done
+
+      - name: Summarize H measurements
+        if: always()
+        shell: bash
+        run: |
+          echo "--- summary.txt ---"
+          cat hgoal_prcom_results/summary.txt 2>/dev/null || true
+          echo "--- outcomes / H / surges ---"
+          grep -hE "OUTCOME:|candidate certificate|H telemetry|H edge predictions|H-ALERT|partner telemetry|partner expansion accounting" \
+            hgoal_prcom_results/*.log 2>/dev/null | tail -n 160 || true
+
+      - name: Upload comparison record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner8-prcom-hgoal-${{ github.run_id }}
+          path: |
+            hgoal_prcom_results
+            hgoal_base_selftest.log
+            hgoal_setmm_sha256.txt
