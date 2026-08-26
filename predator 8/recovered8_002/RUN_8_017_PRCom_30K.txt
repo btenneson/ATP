@@ -1,0 +1,7 @@
+Predator 8.017 recovered-ML + ATTENTION/proximity alarm + full-goal theorem-grade local exactification.
+Target: prcom
+Global expansion budget: 30000
+Brute reserve: 6000
+Seed: 2301
+Historical environment and model hashes must pass before search.
+Certification probe enumerates every open-goal choice; heuristic search still uses recovered pick_goal navigation.
