@@ -4,3 +4,4 @@ Global expansion budget: 30000
 Brute reserve: 6000
 Seed: 2301
 Historical environment and model hashes must pass before search.
+Relaunch: recovered scikit-learn _loss compatibility alias enabled; model bytes unchanged.
