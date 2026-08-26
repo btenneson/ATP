@@ -1,0 +1,143 @@
+name: Predator8 recovered ML prcom attention-surge-torpor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'predator 8/recovered8_002/**'
+      - '.github/workflows/predator8-prcom-recovered-controller.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prcom-recovered-controller:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn joblib
+
+      - name: Decode and validate recovered runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          base64 -d recovered8_002_runtime.zip.b64 > /tmp/recovered8_002_runtime.zip
+          unzip -t /tmp/recovered8_002_runtime.zip
+          unzip -o /tmp/recovered8_002_runtime.zip
+          test -f Predator_8.001_FROZEN.py
+          test -f predator8_ml_ranker.py
+          test -f predator8_external_cv.py
+          test -f setmm_grammar.py
+          test -f metamath.py
+          test -f prcom_quick_policy.joblib
+          python -m py_compile Predator_8.001_FROZEN.py predator8_ml_ranker.py predator8_external_cv.py setmm_grammar.py metamath.py predator8_015_bidirectional_attention.py
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail \
+            -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          MODEL_SHA=$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')
+          echo "environment_sha256=${ENV_SHA}" | tee recovered_hashes.txt
+          echo "model_sha256=${MODEL_SHA}" | tee -a recovered_hashes.txt
+          test "${ENV_SHA}" = "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          test "${MODEL_SHA}" = "0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c"
+
+      - name: Diagnose recovered root rank
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python -u predator8_ml_ranker.py inspect set.mm \
+            --target prcom \
+            --model prcom_quick_policy.joblib \
+            --watch-label 3eqtr4i | tee recovered_root_rank.log
+
+      - name: Run 30000-expansion controller
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          python -u predator8_015_bidirectional_attention.py set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --model prcom_quick_policy.joblib \
+            --label prcom \
+            --budget 30000 \
+            --brute-reserve 6000 \
+            --max-depth 12 \
+            --max-open 8 \
+            --seed 2301 \
+            --creativity 0.55 \
+            --opener-cap 48 \
+            --progress 250 \
+            --frontier-limit 120000 \
+            --out prcom_p8_015.mm \
+            2>&1 | tee prcom_p8_015.log
+          RC=${PIPESTATUS[0]}
+          echo "controller_rc=${RC}" | tee controller_rc.txt
+          if [ "$RC" -eq 2 ]; then
+            echo "PROTOCOL FAILURE" >&2
+            exit 2
+          fi
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then
+            echo "unexpected controller rc=$RC" >&2
+            exit 2
+          fi
+          exit 0
+
+      - name: Independent certificate check if emitted
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          if [ -f prcom_p8_015.mm ]; then
+            python -u predator8_external_cv.py set.mm \
+              --target prcom --certificate prcom_p8_015.mm | tee independent_cv.log
+          else
+            echo "No certificate emitted." | tee independent_cv.log
+          fi
+
+      - name: Summarize control telemetry
+        if: always()
+        shell: bash
+        run: |
+          cd 'predator 8/recovered8_002'
+          echo '--- recovered root rank ---'
+          cat recovered_root_rank.log 2>/dev/null || true
+          echo '--- controller events ---'
+          grep -E 'H-IMPROVE|ATTENTION|SURGE|TORPOR|BRUTE|MEMORY-GUARD|CONTROL SUMMARY|OUTCOME|candidate found' prcom_p8_015.log 2>/dev/null || true
+          echo '--- independent CV ---'
+          cat independent_cv.log 2>/dev/null || true
+
+      - name: Upload experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-prcom-recovered-controller-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/recovered_hashes.txt
+            predator 8/recovered8_002/recovered_root_rank.log
+            predator 8/recovered8_002/prcom_p8_015.log
+            predator 8/recovered8_002/controller_rc.txt
+            predator 8/recovered8_002/independent_cv.log
+            predator 8/recovered8_002/prcom_p8_015.mm
+          if-no-files-found: ignore
