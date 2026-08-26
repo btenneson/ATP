@@ -1,0 +1,129 @@
+name: Partner8 prcom control-(3,4) comparison
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - predator 8/predator 8.011-H-goal.py
+      - predator 8/predator 8.012-control-selfaware-34.py
+      - .github/workflows/partner8-prcom-control34-comparison.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prcom-control34-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download frozen set.mm
+        run: |
+          curl -L --retry 3 --fail \
+            -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/0acf270b982d31fa1cd34f075116e7784869a480/set.mm
+          sha256sum set.mm | tee control34_setmm_sha256.txt
+
+      - name: Compile and selftest engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile "predator 8/predator 8.001.py"
+          python -m py_compile "predator 8/predator 8.010-partner-pair.py"
+          python -m py_compile "predator 8/predator 8.011-H-goal.py"
+          python -m py_compile "predator 8/predator 8.012-control-selfaware-34.py"
+          python -u "predator 8/predator 8.001.py" selftest | tee control34_base_selftest.log
+
+      - name: Run equal-budget prcom comparison
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p control34_prcom_results
+          BUDGET=12000
+          COMMON="--label prcom --budget ${BUDGET} --max-depth 12 --max-open 8 --opener-cap 64 --creativity 0.55 --seed 2301 --progress 500"
+
+          echo "=== A: Partner 8.011 H-goal (1,3)+(2,4), cap ${BUDGET} ===" | tee control34_prcom_results/hgoal_8011.log
+          PREDATOR_PARTNER_REPORT=250 \
+          PREDATOR_H_WEIGHT=0.30 \
+          PREDATOR_H_SURGE=4.0 \
+          PREDATOR_H_TOKEN_WEIGHT=0.015 \
+          python -u "predator 8/predator 8.011-H-goal.py" prove set.mm $COMMON \
+            --agents 2 --out control34_prcom_results/prcom_8011_hgoal.mm \
+            2>&1 | tee -a control34_prcom_results/hgoal_8011.log
+          RC_8011=${PIPESTATUS[0]}
+
+          echo "=== B: Partner 8.012 H-goal (1,3)+(3,4), same cap ${BUDGET} ===" | tee control34_prcom_results/control34_8012.log
+          PREDATOR_PARTNER_REPORT=250 \
+          PREDATOR_H_WEIGHT=0.30 \
+          PREDATOR_H_SURGE=4.0 \
+          PREDATOR_H_TOKEN_WEIGHT=0.015 \
+          PREDATOR_34_SWITCH_STALE=4 \
+          PREDATOR_34_SWITCH_MIN_EXP=500 \
+          PREDATOR_34_IMPROVE_EPS=0.10 \
+          python -u "predator 8/predator 8.012-control-selfaware-34.py" prove set.mm $COMMON \
+            --agents 2 --out control34_prcom_results/prcom_8012_control34.mm \
+            2>&1 | tee -a control34_prcom_results/control34_8012.log
+          RC_8012=${PIPESTATUS[0]}
+
+          {
+            echo "target=prcom"
+            echo "frozen_setmm=0acf270b982d31fa1cd34f075116e7784869a480"
+            echo "global_expansion_cap_each=${BUDGET}"
+            echo "hgoal_8011_rc=${RC_8011}"
+            echo "control34_8012_rc=${RC_8012}"
+            echo "h_weight=0.30"
+            echo "h_surge=4.0"
+            echo "h_token_weight=0.015"
+            echo "control34_switch_stale=4"
+            echo "control34_switch_min_exp=500"
+            echo "control34_improve_eps=0.10"
+          } | tee control34_prcom_results/summary.txt
+
+          for rc in "${RC_8011}" "${RC_8012}"; do
+            if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+              echo "PROTOCOL FAILURE: unexpected rc=$rc" >&2
+              exit 2
+            fi
+          done
+          exit 0
+
+      - name: Independently verify any emitted certificates
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in control34_prcom_results/*.mm; do
+            [ -e "$f" ] || continue
+            echo "VERIFYING $f"
+            python metamath.py verify "$f" | tee -a control34_prcom_results/independent_verifier.log
+          done
+
+      - name: Summarize controller measurements
+        if: always()
+        shell: bash
+        run: |
+          echo "--- summary.txt ---"
+          cat control34_prcom_results/summary.txt 2>/dev/null || true
+          echo "--- outcomes / H / controller / surges ---"
+          grep -hE "OUTCOME:|candidate certificate|CONTROL34|H telemetry|H edge predictions|H-ALERT|partner telemetry|partner expansion accounting" \
+            control34_prcom_results/*.log 2>/dev/null | tail -n 220 || true
+
+      - name: Upload comparison record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: partner8-prcom-control34-${{ github.run_id }}
+          path: |
+            control34_prcom_results
+            control34_base_selftest.log
+            control34_setmm_sha256.txt
