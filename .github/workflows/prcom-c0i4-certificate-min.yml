@@ -1,0 +1,130 @@
+name: prcom C0-I4 certificate minimization
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/prcom-c0i4-certificate-min.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  minimize-certificate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn joblib
+
+      - name: Reassemble recovered 8.002 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile predator8_019_awareness_grid.py predator8_external_cv.py
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          test "$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')" = \
+               "0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c"
+
+      - name: Lexicographic C0-I4 search and compression
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          mkdir -p cert_min
+          BEST=1000000
+          echo 'objective=min_lex(H, proof_steps)' | tee cert_min/summary.txt
+          echo 'C=0 I=4; H=0 requires verifier-approved certificate' | tee -a cert_min/summary.txt
+          echo 'known_from_prior_run_incumbent_steps=28' | tee -a cert_min/summary.txt
+
+          for SEED in 2301 2302 2303 2304 2305 2311 2321 2331 2341 2351 2361 2371; do
+            STEM="cert_min/prcom_C0_I4_seed${SEED}"
+            echo "=== seed ${SEED}; incumbent ${BEST} ===" | tee -a cert_min/summary.txt
+            python -u predator8_019_awareness_grid.py \
+              --control-awareness 0 \
+              --imagination-awareness 4 \
+              set.mm \
+              --engine Predator_8.001_FROZEN.py \
+              --model prcom_quick_policy.joblib \
+              --label prcom \
+              --budget 30000 \
+              --brute-reserve 6000 \
+              --max-depth 12 \
+              --max-open 8 \
+              --seed "$SEED" \
+              --creativity 0.55 \
+              --opener-cap 48 \
+              --progress 250 \
+              --frontier-limit 120000 \
+              --probe-depth 3 \
+              --probe-cap 2000 \
+              --probe-total-cap 4000 \
+              --probe-next-layer 30000 \
+              --out "${STEM}.mm" \
+              > "${STEM}.log" 2>&1
+            RC=$?
+            if [ "$RC" -ne 0 ] || [ ! -f "${STEM}.mm" ]; then
+              echo "seed=${SEED} no_verified_candidate rc=${RC}" | tee -a cert_min/summary.txt
+              continue
+            fi
+
+            if ! python -u predator8_external_cv.py set.mm --target prcom --certificate "${STEM}.mm" \
+                 > "${STEM}.cv.log" 2>&1; then
+              echo "seed=${SEED} external_cv=FAIL" | tee -a cert_min/summary.txt
+              continue
+            fi
+
+            STEPS=$(grep -oE 'proof steps=[0-9]+' "${STEM}.log" | tail -1 | cut -d= -f2)
+            if [ -z "$STEPS" ]; then
+              echo "seed=${SEED} verified_but_step_count_missing" | tee -a cert_min/summary.txt
+              continue
+            fi
+            echo "seed=${SEED} H=0 verified=OK proof_steps=${STEPS}" | tee -a cert_min/summary.txt
+            if [ "$STEPS" -lt "$BEST" ]; then
+              BEST="$STEPS"
+              cp "${STEM}.mm" cert_min/BEST.mm
+              cp "${STEM}.log" cert_min/BEST.log
+              cp "${STEM}.cv.log" cert_min/BEST.cv.log
+              echo "INCUMBENT_UPDATE seed=${SEED} proof_steps=${BEST}" | tee -a cert_min/summary.txt
+            fi
+          done
+
+          echo "final_best_verified_proof_steps=${BEST}" | tee -a cert_min/summary.txt
+          test "$BEST" -lt 1000000
+
+      - name: Upload minimization record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prcom-C0-I4-certificate-min-${{ github.run_id }}
+          path: predator 8/recovered8_002/cert_min
