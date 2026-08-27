@@ -1,0 +1,149 @@
+name: Predator8 prcom shortcut C-I five-seed grid
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/predator8-prcom-shortcut-awareness-5seed.yml'
+      - 'predator 8/recovered8_002/predator8_029_prcom_shortcut_macros.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prcom-shortcut-awareness-five-seed-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prcom-shortcut-grid:
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        control: [0, 2, 4, 5]
+        imagination: [3, 5, 6]
+        seed: [2301, 2302, 2303, 2304, 2305]
+    name: prcom SHORT C${{ matrix.control }} I${{ matrix.imagination }} seed${{ matrix.seed }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn joblib
+
+      - name: Reassemble recovered 8.002 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py predator8_ml_ranker.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py predator8_015_bidirectional_attention.py \
+            predator8_016_prcom_exactify.py predator8_017_fullgraph_exactify.py \
+            predator8_018_bailout.py predator8_019_selective_sink.py \
+            predator8_028_prcom_quotient_awareness.py \
+            predator8_029_prcom_shortcut_macros.py bounded_exactifier.py \
+            settlement_authority.py predator8_authority_adapter.py _loss.py
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          test "$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')" = \
+               "0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c"
+
+      - name: Run shortcut-aware prcom treatment
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          C='${{ matrix.control }}'
+          I='${{ matrix.imagination }}'
+          SEED='${{ matrix.seed }}'
+          STEM="prcom_SHORT_C${C}_I${I}_S${SEED}"
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' -o "${STEM}.time" \
+          python -u predator8_029_prcom_shortcut_macros.py \
+            --control-awareness "$C" \
+            --imagination-awareness "$I" \
+            set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --model prcom_quick_policy.joblib \
+            --label prcom \
+            --budget 30000 \
+            --brute-reserve 6000 \
+            --max-depth 12 \
+            --max-open 8 \
+            --seed "$SEED" \
+            --creativity 0.55 \
+            --opener-cap 48 \
+            --progress 250 \
+            --frontier-limit 120000 \
+            --probe-depth 3 \
+            --probe-cap 2000 \
+            --probe-total-cap 4000 \
+            --probe-next-layer 30000 \
+            --out "${STEM}.mm" \
+            2>&1 | tee "${STEM}.log"
+          RC=${PIPESTATUS[0]}
+          echo "controller_rc=${RC}" > "${STEM}.summary"
+          echo "C=${C} I=${I} seed=${SEED}" >> "${STEM}.summary"
+          cat "${STEM}.time" >> "${STEM}.summary"
+          grep -E '\[SHORTCUT|\[QUOTIENT|OUTCOME:|CONTROL SUMMARY|candidate found|CERTIFIED-ZERO|FALSE-ZERO|H-IMPROVE|proof steps=' "${STEM}.log" \
+            | tail -n 180 >> "${STEM}.summary" || true
+          if [ "$RC" -eq 2 ]; then exit 2; fi
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then exit 2; fi
+          exit 0
+
+      - name: Independent certificate check if emitted
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          C='${{ matrix.control }}'; I='${{ matrix.imagination }}'; SEED='${{ matrix.seed }}'
+          STEM="prcom_SHORT_C${C}_I${I}_S${SEED}"
+          if [ -f "${STEM}.mm" ]; then
+            python -u predator8_external_cv.py set.mm \
+              --target prcom --certificate "${STEM}.mm" | tee "${STEM}.cv.log"
+          else
+            echo 'No certificate emitted.' | tee "${STEM}.cv.log"
+          fi
+
+      - name: Upload treatment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prcom-shortcut-C${{ matrix.control }}-I${{ matrix.imagination }}-S${{ matrix.seed }}-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/prcom_SHORT_C${{ matrix.control }}_I${{ matrix.imagination }}_S${{ matrix.seed }}.log
+            predator 8/recovered8_002/prcom_SHORT_C${{ matrix.control }}_I${{ matrix.imagination }}_S${{ matrix.seed }}.summary
+            predator 8/recovered8_002/prcom_SHORT_C${{ matrix.control }}_I${{ matrix.imagination }}_S${{ matrix.seed }}.time
+            predator 8/recovered8_002/prcom_SHORT_C${{ matrix.control }}_I${{ matrix.imagination }}_S${{ matrix.seed }}.cv.log
+            predator 8/recovered8_002/prcom_SHORT_C${{ matrix.control }}_I${{ matrix.imagination }}_S${{ matrix.seed }}.mm
+          if-no-files-found: ignore
+          retention-days: 90
