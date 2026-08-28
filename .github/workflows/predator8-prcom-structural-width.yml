@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/predator8-prcom-structural-width.yml'
       - 'predator 8/recovered8_002/predator8_030_structural_width.py'
+      - 'predator 8/recovered8_002/predator8_030b_structural_width_entry.py'
   workflow_dispatch:
 
 permissions:
@@ -13,7 +14,7 @@ permissions:
 
 concurrency:
   group: prcom-structural-width-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   structural-width:
@@ -21,7 +22,7 @@ jobs:
       fail-fast: false
       max-parallel: 8
       matrix:
-        width: [8, 16, 24, 32, 48, 64, 96, 128]
+        width: [1, 2, 4, 8, 16, 32, 64, 128]
         seed: [2301, 2302, 2303, 2304, 2305]
     name: prcom D${{ matrix.width }} seed${{ matrix.seed }}
     runs-on: ubuntu-24.04
@@ -62,8 +63,8 @@ jobs:
             predator8_018_bailout.py predator8_019_selective_sink.py \
             predator8_028_prcom_quotient_awareness.py \
             predator8_029_prcom_shortcut_macros.py \
-            predator8_030_structural_width.py bounded_exactifier.py \
-            settlement_authority.py predator8_authority_adapter.py _loss.py
+            predator8_030_structural_width.py predator8_030b_structural_width_entry.py \
+            bounded_exactifier.py settlement_authority.py predator8_authority_adapter.py _loss.py
 
       - name: Download exact historical set.mm
         shell: bash
@@ -87,7 +88,7 @@ jobs:
           SEED='${{ matrix.seed }}'
           STEM="prcom_D${D}_S${SEED}"
           /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' -o "${STEM}.time" \
-          python -u predator8_030_structural_width.py \
+          python -u predator8_030b_structural_width_entry.py \
             --structural-width "$D" \
             set.mm \
             --engine Predator_8.001_FROZEN.py \
@@ -113,7 +114,7 @@ jobs:
           echo "C=0 D=${D} seed=${SEED}" >> "${STEM}.summary"
           cat "${STEM}.time" >> "${STEM}.summary"
           grep -E '\[STRUCTURAL-WIDTH|\[SHORTCUT|\[QUOTIENT|OUTCOME:|CONTROL SUMMARY|candidate found|CERTIFIED-ZERO|FALSE-ZERO|H-IMPROVE|proof steps=' "${STEM}.log" \
-            | tail -n 240 >> "${STEM}.summary" || true
+            | tail -n 320 >> "${STEM}.summary" || true
           if [ "$RC" -eq 2 ]; then exit 2; fi
           if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then exit 2; fi
           exit 0
@@ -137,7 +138,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: prcom-D${{ matrix.width }}-S${{ matrix.seed }}-${{ github.run_id }}
+          name: prcom-structural-D${{ matrix.width }}-S${{ matrix.seed }}-${{ github.run_id }}
           path: |
             predator 8/recovered8_002/prcom_D${{ matrix.width }}_S${{ matrix.seed }}.log
             predator 8/recovered8_002/prcom_D${{ matrix.width }}_S${{ matrix.seed }}.summary
