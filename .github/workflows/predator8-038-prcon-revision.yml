@@ -1,0 +1,207 @@
+name: Predator8 8.038 prcon revision prototype
+
+on:
+  push:
+    branches: [predator8-038-eight-agent-revision-fallback]
+    paths:
+      - '.github/workflows/predator8-038-prcon-revision.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-038-prcon-revision-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prcon-agent:
+    name: prcon ${{ matrix.agent }} c=${{ matrix.creativity }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - agent: P1
+            seed: 2301
+            creativity: '0.15'
+          - agent: P2
+            seed: 2302
+            creativity: '0.25'
+          - agent: R1
+            seed: 2303
+            creativity: '0.35'
+          - agent: R2
+            seed: 2304
+            creativity: '0.45'
+          - agent: I1
+            seed: 2305
+            creativity: '0.55'
+          - agent: I2
+            seed: 2306
+            creativity: '0.65'
+          - agent: C1
+            seed: 2307
+            creativity: '0.75'
+          - agent: C2
+            seed: 2308
+            creativity: '0.85'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download frozen set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 --fail \
+            -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/0acf270b982d31fa1cd34f075116e7784869a480/set.mm
+          sha256sum set.mm | tee setmm_sha256.txt
+
+      - name: Compile and self-test ATP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile 'predator 8/predator 8.001.py'
+          python -u 'predator 8/predator 8.001.py' selftest | tee selftest.log
+
+      - name: Phase 1 ordinary search
+        id: phase1
+        shell: bash
+        env:
+          AGENT: ${{ matrix.agent }}
+          SEED: ${{ matrix.seed }}
+          C0: ${{ matrix.creativity }}
+        run: |
+          set +e
+          set -uo pipefail
+          mkdir -p results
+          BUDGET=12000
+          COMMON="--label prcon --budget ${BUDGET} --max-depth 12 --max-open 8 --opener-cap 64 --agents 1 --progress 500"
+          echo "agent=${AGENT}" | tee results/summary.txt
+          echo "seed=${SEED}" | tee -a results/summary.txt
+          echo "phase1_creativity=${C0}" | tee -a results/summary.txt
+          echo "phase_budget=${BUDGET}" | tee -a results/summary.txt
+          echo "tau=0.5" | tee -a results/summary.txt
+          echo "V(z)=1 required for every accepted settlement" | tee -a results/summary.txt
+
+          python -u 'predator 8/predator 8.001.py' prove set.mm $COMMON \
+            --creativity "${C0}" --seed "${SEED}" \
+            --out "results/${AGENT}_phase1.mm" \
+            2>&1 | tee results/phase1.log
+          RC=${PIPESTATUS[0]}
+          echo "phase1_rc=${RC}" | tee -a results/summary.txt
+
+          if [ "$RC" -eq 0 ]; then
+            echo "phase1_D=0.0" | tee -a results/summary.txt
+            echo "revision_fired=false" | tee -a results/summary.txt
+          elif [ "$RC" -eq 1 ]; then
+            echo "phase1_D=1.0" | tee -a results/summary.txt
+            echo "revision_fired=true" | tee -a results/summary.txt
+          else
+            echo "PROTOCOL FAILURE phase1 rc=${RC}" >&2
+            exit 2
+          fi
+          echo "rc=${RC}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Independently verify phase 1 certificate
+        if: steps.phase1.outputs.rc == '0'
+        shell: bash
+        env:
+          AGENT: ${{ matrix.agent }}
+        run: |
+          set -euo pipefail
+          python metamath.py verify "results/${AGENT}_phase1.mm" \
+            2>&1 | tee results/phase1_independent_verify.log
+          echo "phase1_independent_V=1" | tee -a results/summary.txt
+
+      - name: Compute group inverse creativity
+        if: steps.phase1.outputs.rc == '1'
+        id: inverse
+        shell: bash
+        env:
+          C0: ${{ matrix.creativity }}
+        run: |
+          set -euo pipefail
+          CINV=$(python - <<'PY'
+          import os
+          c=float(os.environ['C0'])
+          print(f"{1.0-c:.12g}")
+          PY
+          )
+          echo "cinv=${CINV}" >> "$GITHUB_OUTPUT"
+          echo "phase2_creativity=${CINV}" | tee -a results/summary.txt
+
+      - name: Phase 2 inverse-revision search
+        if: steps.phase1.outputs.rc == '1'
+        id: phase2
+        shell: bash
+        env:
+          AGENT: ${{ matrix.agent }}
+          SEED: ${{ matrix.seed }}
+          CINV: ${{ steps.inverse.outputs.cinv }}
+        run: |
+          set +e
+          set -uo pipefail
+          BUDGET=12000
+          COMMON="--label prcon --budget ${BUDGET} --max-depth 12 --max-open 8 --opener-cap 64 --agents 1 --progress 500"
+          python -u 'predator 8/predator 8.001.py' prove set.mm $COMMON \
+            --creativity "${CINV}" --seed "${SEED}" \
+            --out "results/${AGENT}_phase2_inverse.mm" \
+            2>&1 | tee results/phase2.log
+          RC=${PIPESTATUS[0]}
+          echo "phase2_rc=${RC}" | tee -a results/summary.txt
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then
+            echo "PROTOCOL FAILURE phase2 rc=${RC}" >&2
+            exit 2
+          fi
+          echo "rc=${RC}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Independently verify phase 2 certificate
+        if: steps.phase2.outputs.rc == '0'
+        shell: bash
+        env:
+          AGENT: ${{ matrix.agent }}
+        run: |
+          set -euo pipefail
+          python metamath.py verify "results/${AGENT}_phase2_inverse.mm" \
+            2>&1 | tee results/phase2_independent_verify.log
+          echo "phase2_independent_V=1" | tee -a results/summary.txt
+          echo "revision_rescue=true" | tee -a results/summary.txt
+
+      - name: Record unresolved revision result
+        if: steps.phase2.outputs.rc == '1'
+        shell: bash
+        run: |
+          echo "revision_rescue=false" | tee -a results/summary.txt
+
+      - name: Show result
+        if: always()
+        shell: bash
+        run: |
+          echo '--- summary ---'
+          cat results/summary.txt 2>/dev/null || true
+          echo '--- key outcomes ---'
+          grep -hE 'OUTCOME:|candidate certificate|CV verdict|expansions' results/*.log 2>/dev/null | tail -n 80 || true
+
+      - name: Upload per-agent record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-038-prcon-${{ matrix.agent }}-${{ github.run_id }}
+          path: |
+            results
+            selftest.log
+            setmm_sha256.txt
+          if-no-files-found: error
+          retention-days: 90
