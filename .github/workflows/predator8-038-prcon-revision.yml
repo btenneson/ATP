@@ -1,4 +1,4 @@
-name: Predator8 8.038 prcon revision corrected
+name: Predator8 8.038 prcon revision tau025
 
 on:
   push:
@@ -139,12 +139,13 @@ jobs:
           }
 
           {
-            echo "attempt=2-corrected"
+            echo "attempt=3-tau025"
             echo "agent=${AGENT}"
             echo "seed=${SEED}"
             echo "phase1_creativity=${C0}"
             echo "phase_budget=${BUDGET}"
-            echo "tau=0.5"
+            echo "tau=0.25"
+            echo "threshold_rule=D>0.25 triggers group-inverse revision"
             echo "V(z)=1 required for every accepted settlement"
             echo "federation_halt=cooperative run-scoped verified-settlement signal"
           } | tee results/summary.txt
