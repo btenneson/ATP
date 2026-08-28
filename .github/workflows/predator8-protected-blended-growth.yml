@@ -1,0 +1,108 @@
+name: Predator8 protected blended growth
+
+on:
+  push:
+    branches: [predator8-031-generalized-training]
+    paths:
+      - '.github/workflows/predator8-protected-blended-growth.yml'
+      - 'predator 8/recovered8_002/predator8_032_protected_blended_training.py'
+      - 'predator 8/recovered8_002/predator8_031_generalized_training.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  train-protected:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn==1.8.0 joblib
+
+      - name: Reassemble recovered 8.002 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py bounded_exactifier.py prcom_root_exactify.py \
+            predator8_031_generalized_training.py predator8_032_protected_blended_training.py
+
+      - name: Download frozen set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Train growing blended model under protected N gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o p8_032.time \
+          python -u predator8_032_protected_blended_training.py set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --holdout prcom \
+            --holdout-gap 32 \
+            --targets 30 \
+            --eval-theorems 3 \
+            --rounds 3 \
+            --exact-targets 6 \
+            --exact-depth 4 \
+            --exact-budget 250 \
+            --search-budget 120 \
+            --seed 2301 \
+            --out p8_032_protected_blended_model.json \
+            --report p8_032_protected_blended_report.json \
+            2>&1 | tee p8_032.log
+
+      - name: Summarize protected-goal result
+        if: always()
+        shell: bash
+        run: |
+          cd 'predator 8/recovered8_002'
+          {
+            echo 'Predator 8.032 protected blended growth'
+            echo 'Protected goal: minimum VERIFIED expansions N; V=1 hard constraint.'
+            echo 'prcom: held out completely.'
+            cat p8_032.time 2>/dev/null || true
+            grep -E '^\[(GUARD|SPLIT|BASELINE|EXACT|ROUND|CANDIDATE|ACCEPT|ROUND-BEST|DEPLOY|DONE)\]' \
+              p8_032.log 2>/dev/null || true
+          } | tee p8_032.summary
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-032-protected-blended-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/p8_032_protected_blended_model.json
+            predator 8/recovered8_002/p8_032_protected_blended_report.json
+            predator 8/recovered8_002/p8_032.log
+            predator 8/recovered8_002/p8_032.summary
+            predator 8/recovered8_002/p8_032.time
+          if-no-files-found: ignore
+          retention-days: 90
