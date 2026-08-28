@@ -1,0 +1,119 @@
+name: Predator8 8.037 inverse revision fixed point
+
+on:
+  push:
+    branches: [predator8-037-inverse-revision-fixedpoint]
+    paths:
+      - '.github/workflows/predator8-037-inverse-revision-fixedpoint.yml'
+      - 'predator 8/recovered8_002/predator8_037_inverse_revision_fixedpoint.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-037-inverse-revision-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  revise-to-fixed-point:
+    name: Iterative inverse revisions C0-I5 seed2302
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn==1.8.0 joblib
+
+      - name: Reassemble frozen Predator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py predator8_ml_ranker.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py predator8_015_bidirectional_attention.py \
+            predator8_016_prcom_exactify.py predator8_017_fullgraph_exactify.py \
+            predator8_018_bailout.py predator8_019_selective_sink.py \
+            predator8_028_prcom_quotient_awareness.py \
+            predator8_029_prcom_shortcut_macros.py \
+            predator8_031_generalized_training.py \
+            predator8_033_bit_coupled_adaptive.py \
+            predator8_035_c3_conservative_compilation.py \
+            predator8_036_inverse_creativity_prcom.py \
+            predator8_037_inverse_revision_fixedpoint.py \
+            bounded_exactifier.py settlement_authority.py predator8_authority_adapter.py _loss.py
+
+      - name: Download frozen historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          test "$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')" = \
+               "0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c"
+
+      - name: Run revision passes until fixed point
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o p8_037_fixedpoint.time \
+          python -u predator8_037_inverse_revision_fixedpoint.py \
+            set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --model prcom_quick_policy.joblib \
+            --label prcom \
+            --seed 2302 \
+            --budget 120 \
+            --max-passes 6 \
+            --parallel 3 \
+            --candidate-timeout 1500 \
+            --outdir p8_037_revision_records \
+            2>&1 | tee p8_037_fixedpoint.log
+
+      - name: Summarize fixed-point result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          {
+            cat p8_037_fixedpoint.time 2>/dev/null || true
+            grep -E '^\[REV-(START|PASS|CANDIDATE|ACCEPT|STABLE|FINAL)' p8_037_fixedpoint.log 2>/dev/null || true
+          } > p8_037_fixedpoint.summary
+          cat p8_037_fixedpoint.summary
+
+      - name: Upload revision bank
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-037-inverse-revision-fixedpoint-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/p8_037_fixedpoint.log
+            predator 8/recovered8_002/p8_037_fixedpoint.summary
+            predator 8/recovered8_002/p8_037_fixedpoint.time
+            predator 8/recovered8_002/p8_037_revision_records/**
+          if-no-files-found: ignore
+          retention-days: 90
