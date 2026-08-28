@@ -9,48 +9,68 @@ optimality-seeking update Phi_a and a trajectory diagnostic D_a(T_a).
     next(c_a) = Phi_a(T_a, c_a)   if D_a(T_a) <= tau_a
                 c_a^{-1}          if D_a(T_a) >  tau_a
 
-Every knob is required to belong to a group.  A revision therefore means the
-full coordinatewise group inverse, not an arbitrary perturbation.  For the
-current logit-addition creativity coordinates on (0,1), inverse(c)=1-c.
+Every knob is required to belong to a group. A revision therefore means the
+full coordinatewise group inverse, not an arbitrary perturbation. The group
+may be continuous, finite, Boolean/cyclic, permutation-valued, or otherwise
+abstract. For the current logit-addition creativity coordinates on (0,1),
+inverse(c)=1-c.
 
 This file is deliberately controller-only: it is safe to prepare before the
-8.037 result is known.  The next experiment can bind each agent's existing
+8.037 result is known. The next experiment can bind each agent's existing
 optimizer and trajectory diagnostic without changing verifier semantics.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Mapping, MutableMapping, Sequence, Tuple
+from typing import Any, Callable, Dict, Mapping, Sequence, Tuple
 
 AGENTS: Tuple[str, ...] = (
     "P1", "P2", "R1", "R2", "I1", "I2", "C1", "C2",
 )
 
-Vector = Mapping[str, float]
-MutableVector = Dict[str, float]
+KnobValue = Any
+Vector = Mapping[str, KnobValue]
+MutableVector = Dict[str, KnobValue]
 Trajectory = Sequence[object]
 Optimizer = Callable[[Trajectory, Vector], MutableVector]
 Diagnostic = Callable[[Trajectory], float]
-Inverse = Callable[[float], float]
+Inverse = Callable[[KnobValue], KnobValue]
+Validator = Callable[[KnobValue], bool]
 
 
-def logit_group_inverse(c: float) -> float:
+def logit_group_inverse(c: KnobValue) -> float:
     """Inverse in ((0,1), logit-addition): c^{-1}=1-c."""
-    c = float(c)
-    if not 0.0 < c < 1.0:
+    x = float(c)
+    if not 0.0 < x < 1.0:
         raise ValueError("logit-group coordinate must lie in (0,1)")
-    return 1.0 - c
+    return 1.0 - x
 
 
 @dataclass(frozen=True)
 class GroupCoordinate:
-    """One knob together with the inverse operation of its group."""
+    """One knob together with the inverse operation of its own group."""
 
     name: str
-    inverse: Inverse = logit_group_inverse
+    inverse: Inverse
+    validator: Validator | None = None
 
-    def invert(self, value: float) -> float:
-        return float(self.inverse(float(value)))
+    def validate(self, value: KnobValue) -> None:
+        if self.validator is not None and not bool(self.validator(value)):
+            raise ValueError(f"{self.name}: value {value!r} is not in its declared group")
+
+    def invert(self, value: KnobValue) -> KnobValue:
+        self.validate(value)
+        result = self.inverse(value)
+        self.validate(result)
+        return result
+
+    @classmethod
+    def logit(cls, name: str) -> "GroupCoordinate":
+        return cls(
+            name=name,
+            inverse=logit_group_inverse,
+            validator=lambda x: 0.0 < float(x) < 1.0,
+        )
 
 
 @dataclass
@@ -62,8 +82,8 @@ class AgentRevisionPolicy:
     diagnostic: Diagnostic
     optimizer: Optimizer
     groups: Mapping[str, GroupCoordinate]
-    min_post_revision_observations: int = 1
-    _observations_since_revision: int = field(default=10**9, init=False)
+    min_post_revision_steps: int = 1
+    _steps_since_revision: int = field(default=10**9, init=False)
 
     def __post_init__(self) -> None:
         if self.agent not in AGENTS:
@@ -78,36 +98,38 @@ class AgentRevisionPolicy:
             raise ValueError(
                 f"{self.agent}: knob/group mismatch; missing={missing}, extra={extra}"
             )
+        for key, value in vector.items():
+            self.groups[key].validate(value)
 
     def inverse_vector(self, vector: Vector) -> MutableVector:
-        """Full revision: invert every knob in its own group."""
+        """Full revision: invert every knob in its own declared group."""
         self.validate_vector(vector)
         return {
-            key: self.groups[key].invert(float(vector[key]))
+            key: self.groups[key].invert(vector[key])
             for key in vector
         }
 
     def step(self, trajectory: Trajectory, vector: Vector) -> tuple[MutableVector, dict]:
         """Choose ordinary optimization or full inverse revision.
 
-        A one-observation refractory period prevents immediate c <-> c^{-1}
-        ping-pong before the revised state has actually been evaluated.
+        The small refractory period prevents immediate c <-> c^{-1} ping-pong
+        before the revised state has been evaluated at least once.
         """
         self.validate_vector(vector)
         d = float(self.diagnostic(trajectory))
         if d != d:  # NaN guard
             raise ValueError(f"{self.agent}: diagnostic D(T) returned NaN")
 
-        can_revise = self._observations_since_revision >= self.min_post_revision_observations
+        can_revise = self._steps_since_revision >= self.min_post_revision_steps
         if d > float(self.threshold) and can_revise:
             nxt = self.inverse_vector(vector)
             mode = "revision"
-            self._observations_since_revision = 0
+            self._steps_since_revision = 0
         else:
             nxt = dict(self.optimizer(trajectory, vector))
             self.validate_vector(nxt)
             mode = "optimization"
-            self._observations_since_revision += 1
+            self._steps_since_revision += 1
 
         return nxt, {
             "agent": self.agent,
