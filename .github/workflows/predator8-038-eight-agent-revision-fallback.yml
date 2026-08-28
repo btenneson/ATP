@@ -1,0 +1,103 @@
+name: Predator8 8.038 eight-agent revision fallback
+
+on:
+  push:
+    branches: [predator8-038-eight-agent-revision-fallback]
+    paths:
+      - '.github/workflows/predator8-038-eight-agent-revision-fallback.yml'
+      - 'predator 8/recovered8_002/predator8_038_eight_agent_revision_fallback.py'
+      - 'predator 8/recovered8_002/test_predator8_038_eight_agent_revision_fallback.py'
+      - 'experiments/partner8_revision_fallback_experiment.py'
+      - 'experiments/partner8_smoketest.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-038-eight-agent-revision-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  final-gate-and-run:
+    name: Final gate, V=1 invariant, eight-agent run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile final implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            'predator 8/recovered8_002/predator8_038_eight_agent_revision_fallback.py' \
+            'predator 8/recovered8_002/test_predator8_038_eight_agent_revision_fallback.py' \
+            'experiments/partner8_revision_fallback_experiment.py' \
+            'experiments/partner8_smoketest.py'
+
+      - name: Run revision fallback unit gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python -u test_predator8_038_eight_agent_revision_fallback.py \
+            2>&1 | tee ../../p8_038_unit_gate.log
+
+      - name: Recheck underlying eight-agent AMLD architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u experiments/partner8_smoketest.py \
+            2>&1 | tee p8_038_partner8_baseline.log
+          grep -q 'ARCHITECTURE: PASS' p8_038_partner8_baseline.log
+
+      - name: Run thresholded revision fallback experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u experiments/partner8_revision_fallback_experiment.py \
+            2>&1 | tee p8_038_experiment.log
+          grep -q '\[P8.038\] V(z)=1 throughout' p8_038_experiment.log
+          grep -q '\[P8.038\] ALL CHECKS PASS' p8_038_experiment.log
+
+      - name: Validate scientific invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('p8_038_revision_fallback_record.json')
+          d = json.loads(p.read_text(encoding='utf-8'))
+          assert d['verifier_invariant'] == 'V(z)=1 throughout'
+          assert len(d['agents']) == 8
+          assert all(d['checks'].values())
+          for block in ('pass1', 'pass2'):
+              decisions = d[block]['decisions']
+              assert len(decisions) == 8
+              assert all(item['V'] == 1 for item in decisions.values())
+          assert d['negative_control_unverified_rejected'] is True
+          print('FINAL INVARIANTS: PASS')
+          print('V(z)=1: PASS')
+          print('ALL EIGHT REVISION POLICIES: PASS')
+          PY
+
+      - name: Upload 8.038 experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-038-eight-agent-revision-fallback-${{ github.run_id }}
+          path: |
+            p8_038_unit_gate.log
+            p8_038_partner8_baseline.log
+            p8_038_experiment.log
+            p8_038_revision_fallback_record.json
+          if-no-files-found: error
+          retention-days: 90
