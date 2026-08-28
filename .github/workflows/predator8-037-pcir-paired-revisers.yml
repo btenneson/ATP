@@ -1,0 +1,108 @@
+name: Predator8 8.037 PCIR paired revisers
+
+on:
+  push:
+    branches: [predator8-037-pcir-paired-revisers]
+    paths:
+      - '.github/workflows/predator8-037-pcir-paired-revisers.yml'
+      - 'predator 8/recovered8_002/predator8_037_pcir_paired_revisers.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-037-pcir-paired-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  paired-revisers:
+    name: PCIR + independent partner, inverse-guided revision
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn==1.8.0 joblib
+
+      - name: Reassemble frozen Predator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py predator8_ml_ranker.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py predator8_015_bidirectional_attention.py \
+            predator8_016_prcom_exactify.py predator8_017_fullgraph_exactify.py \
+            predator8_018_bailout.py predator8_019_selective_sink.py \
+            predator8_028_prcom_quotient_awareness.py predator8_029_prcom_shortcut_macros.py \
+            predator8_031_generalized_training.py predator8_033_bit_coupled_adaptive.py \
+            predator8_035_c3_conservative_compilation.py \
+            predator8_036_inverse_creativity_prcom.py \
+            predator8_037_pcir_paired_revisers.py \
+            bounded_exactifier.py settlement_authority.py predator8_authority_adapter.py _loss.py
+
+      - name: Download frozen historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          test "$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')" = \
+               "0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c"
+
+      - name: Run paired revising-agent experiment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python -u predator8_037_pcir_paired_revisers.py \
+            --passes 2 --budget 40 --seed-a 2302 --seed-b 2303 \
+            --summary p8_037_pcir_paired_revisers.json \
+            2>&1 | tee p8_037_pcir_paired_revisers.log
+
+      - name: Summarize ownership and revision decisions
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          grep -E '^\[P837-(INVARIANT|GROUP|OBJECTIVE|COMMUNITY|LOCAL-REVISION|CANDIDATE|FINAL)' \
+            p8_037_pcir_paired_revisers.log | tail -n 500 \
+            > p8_037_pcir_paired_revisers.summary || true
+          cat p8_037_pcir_paired_revisers.summary || true
+
+      - name: Upload paired-reviser record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p8-037-pcir-paired-revisers-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/p8_037_pcir_paired_revisers.log
+            predator 8/recovered8_002/p8_037_pcir_paired_revisers.summary
+            predator 8/recovered8_002/p8_037_pcir_paired_revisers.json
+            predator 8/recovered8_002/p8_037_*.log
+            predator 8/recovered8_002/p8_037_*.mm
+            predator 8/recovered8_002/p8_037_*.cv.log
+          if-no-files-found: ignore
+          retention-days: 90
