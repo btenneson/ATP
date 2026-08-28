@@ -70,3 +70,7 @@ GitHub Actions matrix jobs execute on separate machines. The halt is therefore c
 - Attempt 1 remains visible and is never rewritten as though these corrections had existed during that run.
 
 This amendment was written before interpreting any valid `prcon` real-target result from Predator 8.038.
+
+## Attempt 2 launch marker
+
+A post-repair commit touching this history file is used only to trigger the corrected workflow after the corrected workflow definition is already present on the branch. It changes no experimental parameter or interpretation rule.
