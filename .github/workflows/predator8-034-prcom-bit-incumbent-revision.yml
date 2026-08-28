@@ -1,0 +1,106 @@
+name: Predator8 8.034 prcom bit-incumbent revision
+
+on:
+  push:
+    branches: [predator8-034-prcom-bit-incumbent]
+    paths:
+      - '.github/workflows/predator8-034-prcom-bit-incumbent-revision.yml'
+      - 'predator 8/recovered8_002/predator8_034_prcom_bit_incumbent_revision.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  revise-prcom:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn==1.8.0 joblib
+
+      - name: Reassemble frozen Predator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py \
+            predator8_031_generalized_training.py \
+            predator8_033_bit_coupled_adaptive.py \
+            predator8_034_prcom_bit_incumbent_revision.py
+
+      - name: Download frozen historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Run three-round coupled prcom revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o p8_034.time \
+          python -u predator8_034_prcom_bit_incumbent_revision.py set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --target prcom \
+            --budget 600 \
+            --seeds 2301,2302,2303,2304,2305 \
+            --rounds 3 \
+            --report p8_034_report.json \
+            --csv p8_034_candidates.csv \
+            2>&1 | tee p8_034.log
+
+      - name: Summarize bit-incumbent result
+        if: always()
+        shell: bash
+        run: |
+          cd 'predator 8/recovered8_002'
+          {
+            echo 'Predator 8.034 — prcom bit-incumbent coupled revision'
+            echo 'Hard constraint: V(P)=1'
+            echo 'Protected incumbent: (B,N,M)=(470 bits,35 expansions,28 proof steps)'
+            echo 'Scientific mode: theorem-specific adaptation; historical certificate order is not replayed.'
+            cat p8_034.time 2>/dev/null || true
+            grep -E '^\[(GUARD|INCUMBENT|EXPERIENCE|ROUND|TRIAL|NEW-BEST|CANDIDATE|ROUND-WINNER|DEPLOY|DONE)\]' \
+              p8_034.log 2>/dev/null || true
+          } | tee p8_034.summary
+
+      - name: Upload experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-034-prcom-bit-incumbent-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/p8_034_report.json
+            predator 8/recovered8_002/p8_034_candidates.csv
+            predator 8/recovered8_002/p8_034.log
+            predator 8/recovered8_002/p8_034.summary
+            predator 8/recovered8_002/p8_034.time
+          if-no-files-found: ignore
+          retention-days: 90
