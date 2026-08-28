@@ -1,0 +1,181 @@
+name: ACO all-set.mm to NOTALD Ocean L4000 pilot
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - '.github/workflows/aco-setmm-notald-L4000-pilot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  transfer-pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile Stage 2 code
+        run: |
+          python -m py_compile \
+            metamath.py \
+            benchmarks/ocean/generate_ocean_tptp.py \
+            benchmarks/ocean/generate_one_ocean.py \
+            benchmarks/ocean/aco_solver.py \
+            benchmarks/ocean/aco_transfer_solver.py \
+            benchmarks/ocean/verify_aco_path.py \
+            benchmarks/ocean/train_setmm_aco_prior.py
+
+      - name: Download and authenticate pinned complete set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p benchmarks/ocean/results/stage2_pilot
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/0acf270b982d31fa1cd34f075116e7784869a480/set.mm
+          sha256sum set.mm | tee benchmarks/ocean/results/stage2_pilot/setmm_sha256.txt
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+            '6a3a85893ac908d3c0ac081e817f40bf2083d1b2d511a09fd0b762cd9b1861a1'
+
+      - name: Independently verify complete set.mm corpus
+        run: |
+          python -u metamath.py verify set.mm --progress 5000 \
+            | tee benchmarks/ocean/results/stage2_pilot/setmm_verify.log
+          grep -Eq '^  FAILED[[:space:]]+0$' benchmarks/ocean/results/stage2_pilot/setmm_verify.log
+
+      - name: Learn colony-memory prior from all complete logical proofs
+        run: |
+          python -u benchmarks/ocean/train_setmm_aco_prior.py set.mm \
+            --out benchmarks/ocean/results/stage2_pilot/setmm_aco_prior.json \
+            --progress 5000 \
+            | tee benchmarks/ocean/results/stage2_pilot/setmm_training.log
+          sha256sum benchmarks/ocean/results/stage2_pilot/setmm_aco_prior.json \
+            | tee benchmarks/ocean/results/stage2_pilot/setmm_aco_prior.sha256
+          cat benchmarks/ocean/results/stage2_pilot/setmm_aco_prior.json
+
+      - name: Freeze prior before benchmark generation
+        run: |
+          cp benchmarks/ocean/results/stage2_pilot/setmm_aco_prior.sha256 \
+             benchmarks/ocean/results/stage2_pilot/PRIOR_FROZEN_BEFORE_OCEAN.txt
+          echo "frozen_at_commit=${GITHUB_SHA}" >> \
+             benchmarks/ocean/results/stage2_pilot/PRIOR_FROZEN_BEFORE_OCEAN.txt
+          cat benchmarks/ocean/results/stage2_pilot/PRIOR_FROZEN_BEFORE_OCEAN.txt
+
+      - name: Generate independent high-n pilot only after prior freeze
+        run: |
+          rm -rf benchmarks/ocean/generated_aco_L4000_pilot
+          python benchmarks/ocean/generate_one_ocean.py \
+            --length 4000 --seed 2301 \
+            --out benchmarks/ocean/generated_aco_L4000_pilot \
+            | tee benchmarks/ocean/results/stage2_pilot/ocean_generation.log
+          python - <<'PY'
+          import json
+          p='benchmarks/ocean/generated_aco_L4000_pilot/manifest.json'
+          m=json.load(open(p,encoding='utf-8'))
+          assert len(m)==1
+          assert m[0]['seed']==2301
+          assert m[0]['Lstar']==4000
+          assert m[0]['bfs_verified_Lstar']==4000
+          print('GROUND TRUTH OK: pilot L*=4000 seed=2301')
+          PY
+
+      - name: Run set.mm-trained frozen ACO
+        id: trained
+        shell: bash
+        run: |
+          set +e
+          python -u benchmarks/ocean/aco_transfer_solver.py \
+            benchmarks/ocean/generated_aco_L4000_pilot/ocean_L4000_seed2301.p \
+            --prior benchmarks/ocean/results/stage2_pilot/setmm_aco_prior.json \
+            --seed 2301 --batches 40 --ants 8 --ant-budget 8000 \
+            --beta 0 --partial-q 5 --partial-elite 4 \
+            --out benchmarks/ocean/results/stage2_pilot/trained.json \
+            --path-out benchmarks/ocean/results/stage2_pilot/trained_path.json \
+            | tee benchmarks/ocean/results/stage2_pilot/trained.log
+          RC=${PIPESTATUS[0]}
+          echo "trained_rc=${RC}" | tee benchmarks/ocean/results/stage2_pilot/trained_rc.txt
+          if [ "$RC" -gt 1 ]; then exit "$RC"; fi
+          exit 0
+
+      - name: Run untrained ACO control with identical finite controls
+        id: control
+        shell: bash
+        run: |
+          set +e
+          python -u benchmarks/ocean/aco_transfer_solver.py \
+            benchmarks/ocean/generated_aco_L4000_pilot/ocean_L4000_seed2301.p \
+            --seed 2301 --batches 40 --ants 8 --ant-budget 8000 \
+            --alpha 1.0 --rho 0.15 --beta 0 \
+            --partial-q 5 --partial-elite 4 \
+            --out benchmarks/ocean/results/stage2_pilot/control.json \
+            --path-out benchmarks/ocean/results/stage2_pilot/control_path.json \
+            | tee benchmarks/ocean/results/stage2_pilot/control.log
+          RC=${PIPESTATUS[0]}
+          echo "control_rc=${RC}" | tee benchmarks/ocean/results/stage2_pilot/control_rc.txt
+          if [ "$RC" -gt 1 ]; then exit "$RC"; fi
+          exit 0
+
+      - name: Independently verify every emitted settlement
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROB=benchmarks/ocean/generated_aco_L4000_pilot/ocean_L4000_seed2301.p
+          if [ -s benchmarks/ocean/results/stage2_pilot/trained_path.json ]; then
+            python benchmarks/ocean/verify_aco_path.py "$PROB" \
+              benchmarks/ocean/results/stage2_pilot/trained_path.json \
+              | tee benchmarks/ocean/results/stage2_pilot/trained_independent_verify.txt
+          fi
+          if [ -s benchmarks/ocean/results/stage2_pilot/control_path.json ]; then
+            python benchmarks/ocean/verify_aco_path.py "$PROB" \
+              benchmarks/ocean/results/stage2_pilot/control_path.json \
+              | tee benchmarks/ocean/results/stage2_pilot/control_independent_verify.txt
+          fi
+
+      - name: Summarize transfer pilot without converting UNKNOWN to failure
+        run: |
+          python - <<'PY' | tee benchmarks/ocean/results/stage2_pilot/summary.txt
+          import json, pathlib
+          prior=json.loads(pathlib.Path('benchmarks/ocean/results/stage2_pilot/setmm_aco_prior.json').read_text())
+          print('learned_alpha=',prior['learned']['alpha'])
+          print('learned_rho=',prior['learned']['rho'])
+          print('complete_proofs_scanned=',prior['complete_proofs_scanned'])
+          print('logical_steps=',prior['total_logical_steps'])
+          print('reuse_events=',prior['reuse_events'])
+          for name in ['trained','control']:
+              p=pathlib.Path(f'benchmarks/ocean/results/stage2_pilot/{name}.json')
+              r=json.loads(p.read_text())
+              print(name,
+                    'solved=',r['solved'],
+                    'alpha=',r['alpha'],
+                    'rho=',r['rho'],
+                    'batches=',r['batches_consumed'],
+                    'ants=',r['ants_run'],
+                    'expansions=',r['total_expansions'],
+                    'transactions=',r['total_transactions'],
+                    'deepest_partial=',r['deepest_partial_depth'],
+                    'proof_length=',r['best_path_length'],
+                    'wall_s=',r['wall_seconds'])
+          PY
+
+      - name: Upload frozen training and high-n pilot record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-setmm-notald-L4000-pilot-${{ github.run_id }}
+          path: |
+            benchmarks/ocean/generated_aco_L4000_pilot/
+            benchmarks/ocean/results/stage2_pilot/
+            experiments/ACO_NOTALD_TRANSFER_PLAN.md
+            experiments/ACO_NOTALD_STAGE2_AMENDMENT.md
+            experiments/ACO_OCEAN_SANITY_RESULT.md
+          if-no-files-found: error
+          retention-days: 90
