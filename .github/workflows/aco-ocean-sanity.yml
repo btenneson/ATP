@@ -1,0 +1,132 @@
+name: ACO Ocean known-theorem sanity check
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - '.github/workflows/aco-ocean-sanity.yml'
+      - 'benchmarks/ocean/aco_solver.py'
+      - 'benchmarks/ocean/verify_aco_path.py'
+      - 'benchmarks/ocean/generate_ocean_tptp.py'
+      - 'experiments/ACO_NOTALD_TRANSFER_PLAN.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile experiment code
+        run: |
+          python -m py_compile \
+            benchmarks/ocean/generate_ocean_tptp.py \
+            benchmarks/ocean/aco_solver.py \
+            benchmarks/ocean/verify_aco_path.py
+
+      - name: Generate independently checked known theorem
+        run: |
+          rm -rf benchmarks/ocean/generated_aco_sanity
+          python benchmarks/ocean/generate_ocean_tptp.py \
+            --out benchmarks/ocean/generated_aco_sanity \
+            --seeds 1 --lengths 20
+          cat benchmarks/ocean/generated_aco_sanity/manifest.json
+          python - <<'PY'
+          import json
+          p='benchmarks/ocean/generated_aco_sanity/manifest.json'
+          m=json.load(open(p,encoding='utf-8'))
+          assert len(m)==1
+          assert m[0]['Lstar']==20
+          assert m[0]['bfs_verified_Lstar']==20
+          print('GROUND TRUTH OK: independently BFS-verified L*=20')
+          PY
+
+      - name: Run ant-colony proof search
+        run: |
+          mkdir -p benchmarks/ocean/results/aco_sanity
+          python benchmarks/ocean/aco_solver.py \
+            benchmarks/ocean/generated_aco_sanity/ocean_L20_seed1.p \
+            --seed 2301 --iterations 12 --ants 16 --ant-budget 2000 \
+            --alpha 1.0 --beta 1.0 --rho 0.15 --q 10 --elite 2 \
+            --out benchmarks/ocean/results/aco_sanity/aco.json \
+            --path-out benchmarks/ocean/results/aco_sanity/aco_path.json
+
+      - name: Run no-learning control
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          python benchmarks/ocean/aco_solver.py \
+            benchmarks/ocean/generated_aco_sanity/ocean_L20_seed1.p \
+            --seed 2301 --iterations 12 --ants 16 --ant-budget 2000 \
+            --alpha 1.0 --beta 1.0 --rho 0.15 --q 10 --elite 2 \
+            --no-learning \
+            --out benchmarks/ocean/results/aco_sanity/random_control.json \
+            --path-out benchmarks/ocean/results/aco_sanity/random_control_path.json
+          echo "random_control_rc=$?" > benchmarks/ocean/results/aco_sanity/random_control_rc.txt
+          exit 0
+
+      - name: Independently verify ACO proof chain
+        run: |
+          python benchmarks/ocean/verify_aco_path.py \
+            benchmarks/ocean/generated_aco_sanity/ocean_L20_seed1.p \
+            benchmarks/ocean/results/aco_sanity/aco_path.json \
+            | tee benchmarks/ocean/results/aco_sanity/independent_verify.txt
+
+      - name: Enforce preregistered sanity criteria
+        run: |
+          python - <<'PY'
+          import json
+          p='benchmarks/ocean/results/aco_sanity/aco.json'
+          r=json.load(open(p,encoding='utf-8'))
+          assert r['solved'] is True
+          assert r['internal_path_check'] is True
+          ratio=r['best_path_reinforcement_ratio']
+          assert ratio is not None and ratio > 1.05, ratio
+          print('SANITY PASS')
+          print('best_path_length=',r['best_path_length'])
+          print('total_expansions=',r['total_expansions'])
+          print('total_transactions=',r['total_transactions'])
+          print('reinforcement_ratio=',ratio)
+          PY
+
+      - name: Compare learning and no-learning descriptively
+        if: always()
+        run: |
+          python - <<'PY' | tee benchmarks/ocean/results/aco_sanity/summary.txt
+          import json, pathlib
+          for name in ['aco','random_control']:
+              p=pathlib.Path(f'benchmarks/ocean/results/aco_sanity/{name}.json')
+              if not p.exists():
+                  print(name,'MISSING')
+                  continue
+              r=json.loads(p.read_text())
+              print(name,
+                    'solved=',r['solved'],
+                    'best_length=',r['best_path_length'],
+                    'expansions=',r['total_expansions'],
+                    'transactions=',r['total_transactions'],
+                    'successful_ants=',r['successful_ants_total'],
+                    'first_success_iteration=',r['first_success_iteration'],
+                    'reinforcement_ratio=',r['best_path_reinforcement_ratio'])
+          PY
+
+      - name: Upload complete sanity record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-ocean-sanity-${{ github.run_id }}
+          path: |
+            benchmarks/ocean/generated_aco_sanity/
+            benchmarks/ocean/results/aco_sanity/
+            experiments/ACO_NOTALD_TRANSFER_PLAN.md
+          if-no-files-found: error
+          retention-days: 90
