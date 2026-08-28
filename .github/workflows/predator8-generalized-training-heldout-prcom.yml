@@ -1,0 +1,119 @@
+name: Predator8 generalized training heldout prcom
+
+on:
+  push:
+    branches: [predator8-031-generalized-training]
+    paths:
+      - '.github/workflows/predator8-generalized-training-heldout-prcom.yml'
+      - 'predator 8/recovered8_002/predator8_031_generalized_training.py'
+      - 'predator 8/recovered8_002/prcom_root_exactify.py'
+      - 'predator 8/recovered8_002/bounded_exactifier.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-generalized-training-heldout-prcom-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  train:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn==1.8.0 joblib
+
+      - name: Reassemble recovered 8.002 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py metamath.py setmm_grammar.py \
+            bounded_exactifier.py prcom_root_exactify.py \
+            predator8_031_generalized_training.py
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Train generalized held-out-prcom model
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o p8_031_training.time \
+          python -u predator8_031_generalized_training.py \
+            set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --holdout prcom \
+            --holdout-gap 32 \
+            --targets 64 \
+            --exact-targets 12 \
+            --exact-depth 4 \
+            --exact-budget 4000 \
+            --search-eval 6 \
+            --search-budget 1500 \
+            --seed 2301 \
+            --out p8_031_generalized_model.json \
+            --report p8_031_training_report.json \
+            --csv p8_031_training_theorems.csv \
+            2>&1 | tee p8_031_training.log
+
+      - name: Summarize protected-goal training
+        if: always()
+        shell: bash
+        run: |
+          cd 'predator 8/recovered8_002'
+          {
+            echo 'Predator 8.031 held-out-prcom generalized training'
+            echo 'Protected goal: minimum VERIFIED expansions N; V=1 hard constraint.'
+            echo 'prcom target proof: NEVER USED.'
+            cat p8_031_training.time 2>/dev/null || true
+            grep -E '^\[(GUARD|SELECT|PAIRS|EXACT|BASELINE|MODEL|SELECTED|DONE)\]' \
+              p8_031_training.log 2>/dev/null || true
+          } | tee p8_031_training.summary
+
+      - name: Upload training record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-031-generalized-heldout-prcom-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/p8_031_generalized_model.json
+            predator 8/recovered8_002/p8_031_training_report.json
+            predator 8/recovered8_002/p8_031_training_theorems.csv
+            predator 8/recovered8_002/p8_031_training.log
+            predator 8/recovered8_002/p8_031_training.summary
+            predator 8/recovered8_002/p8_031_training.time
+          if-no-files-found: ignore
+          retention-days: 90
