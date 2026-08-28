@@ -20,7 +20,7 @@ concurrency:
 jobs:
   train:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 45
     env:
       PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
 
@@ -77,12 +77,12 @@ jobs:
             --engine Predator_8.001_FROZEN.py \
             --holdout prcom \
             --holdout-gap 32 \
-            --targets 32 \
-            --exact-targets 8 \
+            --targets 16 \
+            --exact-targets 4 \
             --exact-depth 4 \
-            --exact-budget 1000 \
-            --search-eval 4 \
-            --search-budget 250 \
+            --exact-budget 300 \
+            --search-eval 2 \
+            --search-budget 80 \
             --seed 2301 \
             --out p8_031_generalized_model.json \
             --report p8_031_training_report.json \
