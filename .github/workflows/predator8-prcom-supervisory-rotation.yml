@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 370
     env:
+      PYTHONPATH: ${{ github.workspace }}
       TARGET: prcom
       SEED: '2301'
       BUDGET: '300000'
@@ -38,6 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile \
+            metamath.py setmm_grammar.py \
             'predator 8/predator 8.001.py' \
             'predator 8/predator 8.002-compass.py' \
             'predator 8/predator 8.003-R3I4.py' \
