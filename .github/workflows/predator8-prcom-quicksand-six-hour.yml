@@ -1,0 +1,198 @@
+name: Predator8 8.039 prcom six-hour quicksand revision
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - 'experiments/TRIGGER_P8_039_SIX_HOUR_2026_08_29.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-039-prcom-six-hour
+  cancel-in-progress: false
+
+jobs:
+  treatment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 370
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+      TARGET: prcom
+      SEED: '2301'
+      BUDGET: '300000'
+      BRUTE_RESERVE: '60000'
+      WALL_SECONDS: '21400'
+    steps:
+      - name: Check out selected ref
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install frozen ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn==1.8.0 joblib
+
+      - name: Reassemble and validate recovered runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = '167804'
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               '92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3'
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py predator8_ml_ranker.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py predator8_016_prcom_exactify.py \
+            predator8_017_fullgraph_exactify.py predator8_018_bailout.py \
+            predator8_019_selective_sink.py predator8_033_bit_coupled_adaptive.py \
+            predator8_039_quicksand_revision.py bounded_exactifier.py \
+            settlement_authority.py predator8_authority_adapter.py _loss.py
+
+      - name: Unit-test revision and authority invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python -m unittest -v \
+            test_predator8_039_quicksand_revision.py \
+            test_predator8_016_prcom_exactify.py \
+            test_bounded_exactifier.py \
+            test_settlement_authority.py \
+            test_predator8_authority_adapter.py \
+            2>&1 | tee p8_039_six_hour_tests.log
+
+      - name: Download and hash frozen set.mm environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          MODEL_SHA=$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')
+          test "$ENV_SHA" = '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
+          test "$MODEL_SHA" = '0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c'
+          {
+            echo "version=8.039-joint-H-compression-quicksand-revision"
+            echo "target=${TARGET}"
+            echo "seed=${SEED}"
+            echo "budget=${BUDGET}"
+            echo "brute_reserve=${BRUTE_RESERVE}"
+            echo "wall_seconds=${WALL_SECONDS}"
+            echo "environment_sha256=${ENV_SHA}"
+            echo "model_sha256=${MODEL_SHA}"
+            echo 'primary_endpoint=first independently verifier-accepted settlement'
+            echo 'z_l_status=secondary diagnostic, not remaining certificate complexity'
+          } | tee p8_039_six_hour_protocol.txt
+
+      - name: Run six-hour-capped 8.039 treatment
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "started_utc=${START}" | tee p8_039_six_hour_status.txt
+          timeout "${WALL_SECONDS}" python -u predator8_039_quicksand_revision.py set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --model prcom_quick_policy.joblib \
+            --label "${TARGET}" \
+            --budget "${BUDGET}" \
+            --brute-reserve "${BRUTE_RESERVE}" \
+            --max-depth 12 \
+            --max-open 8 \
+            --seed "${SEED}" \
+            --creativity 0.55 \
+            --opener-cap 48 \
+            --progress 250 \
+            --frontier-limit 120000 \
+            --probe-depth 3 \
+            --probe-cap 2000 \
+            --probe-total-cap 4000 \
+            --probe-next-layer 30000 \
+            --out prcom_p8_039_six_hour.mm \
+            2>&1 | tee prcom_p8_039_six_hour.log
+          RC=${PIPESTATUS[0]}
+          END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          {
+            echo "returncode=${RC}"
+            echo "ended_utc=${END}"
+          } | tee -a p8_039_six_hour_status.txt
+          # 0 = normal/settled, 1 = bounded unknown, 124 = explicit wall-clock cap.
+          if [ "$RC" -eq 0 ] || [ "$RC" -eq 1 ] || [ "$RC" -eq 124 ]; then exit 0; fi
+          exit 2
+
+      - name: Independently verify emitted certificate
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          if [ -s prcom_p8_039_six_hour.mm ]; then
+            python -u predator8_external_cv.py set.mm \
+              --target "${TARGET}" --certificate prcom_p8_039_six_hour.mm \
+              | tee p8_039_six_hour_external_cv.log
+          else
+            echo 'No standalone certificate emitted.' | tee p8_039_six_hour_external_cv.log
+          fi
+
+      - name: Extract scientific summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          text = Path('prcom_p8_039_six_hour.log').read_text(encoding='utf-8', errors='replace') if Path('prcom_p8_039_six_hour.log').exists() else ''
+          cv = Path('p8_039_six_hour_external_cv.log').read_text(encoding='utf-8', errors='replace') if Path('p8_039_six_hour_external_cv.log').exists() else ''
+          cand = re.search(r'candidate found after total\s+([0-9,]+)\s+expansions', text)
+          hs = re.findall(r'best_h=([0-9.]+)', text)
+          summary = {
+              'target': 'prcom',
+              'seed': 2301,
+              'budget': 300000,
+              'wall_cap_seconds': 21400,
+              'verified_proof_reported': 'OUTCOME: VERIFIED PROOF' in text,
+              'independent_cv_ok': 'EXTERNAL CV: OK' in cv,
+              'first_candidate_expansions': int(cand.group(1).replace(',', '')) if cand else None,
+              'last_best_h': float(hs[-1]) if hs else None,
+              'revision_events': text.count('[REVISION]'),
+              'revision_end_events': text.count('[REVISION-END]'),
+              'joint_bailouts': text.count('[JOINT-BAILOUT]'),
+              'l_improvements': text.count('[L-IMPROVE]'),
+              'h_improvements': text.count('[H-IMPROVE]'),
+              'false_zeros': text.count('[FALSE-ZERO]'),
+              'guard': 'Heuristic H_hat and z_l are non-authoritative; settlement requires independent verifier acceptance.'
+          }
+          Path('p8_039_six_hour_summary.json').write_text(json.dumps(summary, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Upload full experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-039-prcom-six-hour-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/p8_039_six_hour_protocol.txt
+            predator 8/recovered8_002/p8_039_six_hour_tests.log
+            predator 8/recovered8_002/p8_039_six_hour_status.txt
+            predator 8/recovered8_002/prcom_p8_039_six_hour.log
+            predator 8/recovered8_002/p8_039_six_hour_external_cv.log
+            predator 8/recovered8_002/p8_039_six_hour_summary.json
+            predator 8/recovered8_002/prcom_p8_039_six_hour.mm
+          if-no-files-found: ignore
+          retention-days: 90
