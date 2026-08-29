@@ -1,0 +1,1 @@
+Launch one preregistered-style treatment run on prcom: operational R3 supervisory control + certificate-coherent I4 FUTUREBANK + half-turn rotation of actual strategy knobs; seed 2301; 300000 expansions; no brute fallback.
