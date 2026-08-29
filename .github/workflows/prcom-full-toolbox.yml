@@ -1,0 +1,348 @@
+name: prcom full-toolbox verifier-gated portfolio
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - '.github/workflows/prcom-full-toolbox.yml'
+      - 'experiments/PRCOM_FULL_TOOLBOX_PROTOCOL.md'
+      - 'experiments/aco_prcom_guided.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: prcom-full-toolbox-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cancel-replaced-run:
+    name: Attempt cancellation of replaced ACO-only run
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Cancel run 33239119891 if still active
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD_RUN_ID: '33239119891'
+        shell: bash
+        run: |
+          set -uo pipefail
+          URL="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${OLD_RUN_ID}/cancel"
+          CODE=$(curl -sS -o cancel_response.json -w '%{http_code}' \
+            -L -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "$URL" || true)
+          echo "cancel_http_code=${CODE}"
+          cat cancel_response.json 2>/dev/null || true
+          # 202 = cancellation accepted; 409 commonly means it is already done/not cancellable.
+          if [ "$CODE" = '202' ] || [ "$CODE" = '409' ]; then exit 0; fi
+          exit 1
+
+  architecture-gate:
+    name: Eight-agent revision/verifier architecture gate
+    needs: cancel-replaced-run
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile and test eight-agent revision fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            'predator 8/recovered8_002/predator8_038_eight_agent_revision_fallback.py' \
+            'predator 8/recovered8_002/test_predator8_038_eight_agent_revision_fallback.py' \
+            'experiments/partner8_revision_fallback_experiment.py' \
+            'experiments/partner8_smoketest.py'
+          cd 'predator 8/recovered8_002'
+          python -u test_predator8_038_eight_agent_revision_fallback.py | tee ../../toolbox_architecture_gate.log
+          cd ../..
+          python -u experiments/partner8_smoketest.py | tee -a toolbox_architecture_gate.log
+          grep -q 'ARCHITECTURE: PASS' toolbox_architecture_gate.log
+
+      - name: Upload architecture gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prcom-full-toolbox-architecture-${{ github.run_id }}
+          path: toolbox_architecture_gate.log
+          if-no-files-found: ignore
+          retention-days: 90
+
+  toolbox:
+    name: toolbox-${{ matrix.arm }}
+    needs: architecture-gate
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        arm: [aco, adaptive, c3, inverse-revision, bit-revision, bank]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned ML runtime
+        run: python -m pip install --quiet numpy scipy scikit-learn==1.8.0 joblib
+
+      - name: Reassemble and compile full Predator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile experiments/aco_prcom_guided.py
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               '92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3'
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py predator8_ml_ranker.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py predator8_015_bidirectional_attention.py \
+            predator8_016_prcom_exactify.py predator8_017_fullgraph_exactify.py \
+            predator8_018_bailout.py predator8_019_selective_sink.py \
+            predator8_026_prcom_finite_exhaustive_bank.py \
+            predator8_028_prcom_quotient_awareness.py \
+            predator8_029_prcom_shortcut_macros.py \
+            predator8_030_prcom_adaptive_shortcut.py \
+            predator8_031_generalized_training.py \
+            predator8_033_bit_coupled_adaptive.py \
+            predator8_034_prcom_bit_incumbent_revision.py \
+            predator8_035_c3_conservative_compilation.py \
+            predator8_036_inverse_creativity_prcom.py \
+            predator8_037_inverse_revision_fixedpoint.py \
+            bounded_exactifier.py settlement_authority.py predator8_authority_adapter.py _loss.py
+
+      - name: Download frozen formal environment and verify model
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
+          test "$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')" = \
+               '0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c'
+
+      - name: Run toolbox arm
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          ARM='${{ matrix.arm }}'
+          ROOT="$GITHUB_WORKSPACE"
+          RUNTIME="$ROOT/predator 8/recovered8_002"
+          OUT="$ROOT/toolbox/$ARM"
+          mkdir -p "$OUT"
+          cd "$RUNTIME"
+
+          case "$ARM" in
+            aco)
+              timeout 20700 python -u "$ROOT/experiments/aco_prcom_guided.py" set.mm \
+                --engine Predator_8.001_FROZEN.py \
+                --target prcom --arm aco --seed 2301 \
+                --batches 120 --ants 8 \
+                --stages '64:16,128:32,256:64,512:128' \
+                --alpha 1.0 --beta 1.25 --epsilon 0.10 --rho 0.15 \
+                --partial-q 5.0 --partial-elite 4 --elite-pool-size 4 \
+                --wall-seconds 20500 \
+                --checkpoint "$OUT/checkpoint.jsonl" \
+                --out "$OUT/result.json" \
+                2>&1 | tee "$OUT/run.log"
+              RC=${PIPESTATUS[0]}
+              ;;
+
+            adaptive)
+              timeout 20700 python -u predator8_030_prcom_adaptive_shortcut.py \
+                set.mm --engine Predator_8.001_FROZEN.py \
+                --model prcom_quick_policy.joblib --label prcom \
+                --budget 30000 --brute-reserve 6000 --max-depth 12 --max-open 8 \
+                --seed 2301 --creativity 0.55 --opener-cap 48 --progress 100 \
+                --frontier-limit 120000 --probe-depth 3 --probe-cap 2000 \
+                --probe-total-cap 4000 --probe-next-layer 30000 \
+                --out "$OUT/candidate.mm" \
+                2>&1 | tee "$OUT/run.log"
+              RC=${PIPESTATUS[0]}
+              ;;
+
+            c3)
+              timeout 20700 python -u predator8_035_c3_conservative_compilation.py \
+                set.mm --engine Predator_8.001_FROZEN.py \
+                --model prcom_quick_policy.joblib --label prcom --seed 2303 \
+                --c3-profile balanced --budget 30000 --brute-reserve 6000 \
+                --max-open 8 --progress 100 --frontier-limit 120000 \
+                --probe-depth 3 --probe-cap 2000 --probe-total-cap 4000 \
+                --probe-next-layer 30000 --out "$OUT/candidate.mm" \
+                2>&1 | tee "$OUT/run.log"
+              RC=${PIPESTATUS[0]}
+              ;;
+
+            inverse-revision)
+              timeout 20700 python -u predator8_037_inverse_revision_fixedpoint.py \
+                set.mm --engine Predator_8.001_FROZEN.py \
+                --model prcom_quick_policy.joblib --label prcom --seed 2302 \
+                --budget 240 --max-passes 8 --parallel 3 --candidate-timeout 1800 \
+                --outdir "$OUT/revision_records" \
+                2>&1 | tee "$OUT/run.log"
+              RC=${PIPESTATUS[0]}
+              ;;
+
+            bit-revision)
+              timeout 20700 python -u predator8_034_prcom_bit_incumbent_revision.py set.mm \
+                --engine Predator_8.001_FROZEN.py --target prcom \
+                --budget 1200 --seeds 2301,2302,2303,2304,2305 \
+                --rounds 6 --report "$OUT/report.json" --csv "$OUT/candidates.csv" \
+                2>&1 | tee "$OUT/run.log"
+              RC=${PIPESTATUS[0]}
+              ;;
+
+            bank)
+              timeout 20700 python -u predator8_026_prcom_finite_exhaustive_bank.py \
+                set.mm --engine Predator_8.001_FROZEN.py \
+                --model prcom_quick_policy.joblib --label prcom \
+                --max-depth 6 --max-open 8 --candidate-cap 64 \
+                --max-expanded 1000000 --max-frontier 1000000 --progress 5000 \
+                --bank-dir "$OUT/bank" --summary "$OUT/summary.json" \
+                2>&1 | tee "$OUT/run.log"
+              RC=${PIPESTATUS[0]}
+              ;;
+          esac
+
+          echo "$RC" > "$OUT/returncode.txt"
+          printf 'arm=%s\nreturncode=%s\n' "$ARM" "$RC" > "$OUT/arm.summary"
+          # 0=normal completion, 1=bounded UNKNOWN in several legacy controllers,
+          # 124=our explicit six-hour-safe internal timeout.  Other values are infrastructure errors.
+          if [ "$RC" -eq 0 ] || [ "$RC" -eq 1 ] || [ "$RC" -eq 124 ]; then exit 0; fi
+          exit 2
+
+      - name: Independently verify every emitted Metamath certificate
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          ARM='${{ matrix.arm }}'
+          ROOT="$GITHUB_WORKSPACE"
+          RUNTIME="$ROOT/predator 8/recovered8_002"
+          OUT="$ROOT/toolbox/$ARM"
+          : > "$OUT/external_cv.log"
+          found=0
+          while IFS= read -r -d '' cert; do
+            found=1
+            echo "=== CERTIFICATE: $cert ===" >> "$OUT/external_cv.log"
+            (cd "$RUNTIME" && python -u predator8_external_cv.py set.mm \
+              --target prcom --certificate "$cert") >> "$OUT/external_cv.log" 2>&1 || true
+          done < <(find "$OUT" -type f -name '*.mm' -print0 2>/dev/null)
+          if [ "$found" -eq 0 ]; then
+            echo 'No standalone .mm certificate emitted by this arm.' >> "$OUT/external_cv.log"
+          fi
+          cat "$OUT/external_cv.log"
+
+      - name: Upload toolbox arm record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prcom-full-toolbox-${{ matrix.arm }}-${{ github.run_id }}
+          path: |
+            experiments/PRCOM_FULL_TOOLBOX_PROTOCOL.md
+            toolbox/${{ matrix.arm }}/**
+          if-no-files-found: ignore
+          retention-days: 90
+
+  summarize:
+    name: Portfolio verifier summary
+    needs: toolbox
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all toolbox artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prcom-full-toolbox-*-${{ github.run_id }}
+          path: portfolio_artifacts
+          merge-multiple: true
+
+      - name: Build clean versus experienced summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('portfolio_artifacts')
+          arms = ['aco','adaptive','c3','inverse-revision','bit-revision','bank']
+          experienced = {'inverse-revision','bit-revision'}
+          rows = []
+          for arm in arms:
+              candidates = list(root.rglob(f'{arm}/run.log'))
+              log = candidates[0] if candidates else None
+              text = log.read_text(encoding='utf-8', errors='replace') if log else ''
+              cv_files = list(root.rglob(f'{arm}/external_cv.log'))
+              cv = cv_files[0].read_text(encoding='utf-8', errors='replace') if cv_files else ''
+              verified = (
+                  'EXTERNAL CV: OK' in cv or
+                  'OUTCOME: VERIFIED PROOF' in text or
+                  '"verified": true' in text.lower()
+              )
+              rc_files = list(root.rglob(f'{arm}/returncode.txt'))
+              rc = rc_files[0].read_text().strip() if rc_files else None
+              rows.append({
+                  'arm': arm,
+                  'evidence_class': 'target-experienced optimization' if arm in experienced else 'clean/search',
+                  'verified_signal': bool(verified),
+                  'returncode': rc,
+              })
+
+          clean_verified = any(r['verified_signal'] and r['evidence_class']=='clean/search' for r in rows)
+          any_verified = any(r['verified_signal'] for r in rows)
+          out = {
+              'target': 'prcom',
+              'portfolio_verified_signal': any_verified,
+              'clean_verified_signal': clean_verified,
+              'rows': rows,
+              'interpretation': (
+                  'VERIFIED signal present; inspect certificate/CV artifact before publication.'
+                  if any_verified else
+                  'No verified signal found in collected artifacts: bounded UNKNOWN under portfolio budget unless an arm infrastructure error intervened.'
+              ),
+          }
+          Path('prcom_full_toolbox_summary.json').write_text(json.dumps(out, indent=2) + '\n')
+          md = ['# prcom full-toolbox portfolio summary', '', f"Portfolio verified signal: **{any_verified}**", f"Clean/search verified signal: **{clean_verified}**", '', '| arm | evidence | verified signal | return code |', '|---|---|---:|---:|']
+          for r in rows:
+              md.append(f"| {r['arm']} | {r['evidence_class']} | {r['verified_signal']} | {r['returncode']} |")
+          Path('prcom_full_toolbox_summary.md').write_text('\n'.join(md) + '\n')
+          print('\n'.join(md))
+          PY
+
+      - name: Upload portfolio summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: prcom-full-toolbox-summary-${{ github.run_id }}
+          path: |
+            prcom_full_toolbox_summary.json
+            prcom_full_toolbox_summary.md
+          retention-days: 90
