@@ -1,0 +1,174 @@
+name: Predator8 8.040 prcom supervisory rotation
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - 'experiments/TRIGGER_P8_040_SUPERVISORY_ROTATION_2026_08_29.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-040-prcom-supervisory-rotation
+  cancel-in-progress: false
+
+jobs:
+  treatment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 370
+    env:
+      TARGET: prcom
+      SEED: '2301'
+      BUDGET: '300000'
+      WALL_SECONDS: '21400'
+      ROTATE_STALE: '6000'
+    steps:
+      - name: Check out selected ref
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile operational R3I4 lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            'predator 8/predator 8.001.py' \
+            'predator 8/predator 8.002-compass.py' \
+            'predator 8/predator 8.003-R3I4.py' \
+            'predator 8/predator 8.004-R3I4-indexed.py' \
+            'predator 8/predator 8.005-R3I4-terminaldv.py' \
+            'predator 8/predator 8.006-R3I4-strategy-switch.py' \
+            'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' \
+            'predator 8/predator 8.040-R3I4-supervisory-rotation.py'
+
+      - name: Self-test architecture and rotation invariants
+        shell: bash
+        env:
+          PREDATOR_840_ROTATE_STALE: ${{ env.ROTATE_STALE }}
+        run: |
+          set -euo pipefail
+          python -u 'predator 8/predator 8.040-R3I4-supervisory-rotation.py' selftest \
+            2>&1 | tee p8_040_selftest.log
+
+      - name: Download and hash frozen set.mm environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          test "$ENV_SHA" = '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
+          {
+            echo 'version=8.040-R3I4-supervisory-half-turn'
+            echo "target=${TARGET}"
+            echo "seed=${SEED}"
+            echo "budget=${BUDGET}"
+            echo "wall_seconds=${WALL_SECONDS}"
+            echo "rotate_stale=${ROTATE_STALE}"
+            echo "environment_sha256=${ENV_SHA}"
+            echo 'control=operational R3; retains authority for full declared budget'
+            echo 'imagination=certificate-coherent I4 FUTUREBANK, max four legal backward steps'
+            echo 'escape=half-turn of all R3/I4 strategy knobs in normalized continuous relaxation'
+            echo 'creativity_status=derived/initialization quantity; not a rotated knob'
+            echo 'brute_fallback=disabled in treatment architecture'
+            echo 'primary_endpoint=verifier-accepted Metamath certificate for prcom'
+          } | tee p8_040_protocol.txt
+
+      - name: Run 300k prcom treatment
+        shell: bash
+        env:
+          PREDATOR_840_ROTATE_STALE: ${{ env.ROTATE_STALE }}
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8'
+          START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "started_utc=${START}" | tee p8_040_status.txt
+          timeout "${WALL_SECONDS}" python -u 'predator 8.040-R3I4-supervisory-rotation.py' prove set.mm \
+            --label "${TARGET}" \
+            --budget "${BUDGET}" \
+            --max-depth 12 \
+            --agents 4 \
+            --creativity 0.55 \
+            --seed "${SEED}" \
+            --opener-cap 48 \
+            --max-open 8 \
+            --progress 250 \
+            --out prcom_p8_040.mm \
+            2>&1 | tee prcom_p8_040.log
+          RC=${PIPESTATUS[0]}
+          END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          {
+            echo "returncode=${RC}"
+            echo "ended_utc=${END}"
+          } | tee -a p8_040_status.txt
+          # 0=verified proof, 1=bounded unknown, 124=wall cap.
+          if [ "$RC" -eq 0 ] || [ "$RC" -eq 1 ] || [ "$RC" -eq 124 ]; then exit 0; fi
+          exit 2
+
+      - name: Independent certificate verification
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          if [ -s prcom_p8_040.mm ]; then
+            python -u ../metamath.py verify prcom_p8_040.mm \
+              2>&1 | tee p8_040_external_cv.log
+          else
+            echo 'No standalone certificate emitted.' | tee p8_040_external_cv.log
+          fi
+
+      - name: Extract scientific summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          text = Path('prcom_p8_040.log').read_text(encoding='utf-8', errors='replace') if Path('prcom_p8_040.log').exists() else ''
+          cv = Path('p8_040_external_cv.log').read_text(encoding='utf-8', errors='replace') if Path('p8_040_external_cv.log').exists() else ''
+          candidate = re.search(r'candidate certificate found .* after\s+([0-9,]+)\s+expansions', text)
+          rotations = len(re.findall(r'LEVEL-3 STRATEGY SWITCH[^\n]*-> ROTATED', text))
+          summary = {
+              'target': 'prcom',
+              'seed': 2301,
+              'budget': 300000,
+              'rotate_stale': 6000,
+              'verified_proof_reported': 'OUTCOME: VERIFIED PROOF' in text,
+              'independent_cv_ok': ('0 errors' in cv.lower() or 'verified' in cv.lower() or 'ok' in cv.lower()) if cv else False,
+              'first_candidate_expansions': int(candidate.group(1).replace(',', '')) if candidate else None,
+              'strategy_switches': text.count('LEVEL-3 STRATEGY SWITCH'),
+              'rotation_entries': rotations,
+              'rotated_mentions': text.count('ROTATED'),
+              'unknown_under_bounds': 'OUTCOME: UNKNOWN UNDER THE DECLARED RESOURCE BOUNDS' in text,
+              'protocol': 'R3 supervisory control + certificate-coherent I4 FUTUREBANK + half-turn escape; no brute fallback.'
+          }
+          Path('p8_040_summary.json').write_text(json.dumps(summary, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Upload full experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-040-prcom-supervisory-rotation-${{ github.run_id }}
+          path: |
+            p8_040_selftest.log
+            predator 8/p8_040_protocol.txt
+            predator 8/p8_040_status.txt
+            predator 8/prcom_p8_040.log
+            predator 8/p8_040_external_cv.log
+            predator 8/p8_040_summary.json
+            predator 8/prcom_p8_040.mm
+          if-no-files-found: ignore
+          retention-days: 90
