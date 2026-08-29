@@ -1,0 +1,254 @@
+name: Predator8 8.041 prcom feedback control
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - 'experiments/TRIGGER_P8_041_FEEDBACK_CONTROL_2026_08_29.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-041-prcom-feedback-control
+  cancel-in-progress: false
+
+jobs:
+  treatment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 370
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      TARGET: prcom
+      SEED: '2301'
+      BUDGET: '300000'
+      WALL_SECONDS: '21400'
+      CONTROL_START_STALE: '5200'
+      CONTROL_TICK: '100'
+      MAX_CONTROL_STEPS: '24'
+    steps:
+      - name: Check out selected ref
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile operational R3I4 lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            metamath.py setmm_grammar.py \
+            'predator 8/predator 8.001.py' \
+            'predator 8/predator 8.002-compass.py' \
+            'predator 8/predator 8.003-R3I4.py' \
+            'predator 8/predator 8.004-R3I4-indexed.py' \
+            'predator 8/predator 8.005-R3I4-terminaldv.py' \
+            'predator 8/predator 8.006-R3I4-strategy-switch.py' \
+            'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' \
+            'predator 8/predator 8.041-R3I4-feedback-control.py'
+
+      - name: Self-test closed-loop controller
+        shell: bash
+        env:
+          PREDATOR_841_CONTROL_START_STALE: ${{ env.CONTROL_START_STALE }}
+          PREDATOR_841_CONTROL_TICK: ${{ env.CONTROL_TICK }}
+          PREDATOR_841_MAX_CONTROL_STEPS: ${{ env.MAX_CONTROL_STEPS }}
+        run: |
+          set -euo pipefail
+          python -u 'predator 8/predator 8.041-R3I4-feedback-control.py' selftest \
+            2>&1 | tee p8_041_selftest.log
+
+      - name: Download and hash frozen set.mm environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          test "$ENV_SHA" = '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
+          {
+            echo 'version=8.041-R3I4-reference-tracking-control'
+            echo 'verification_harness=context-substitution-v2'
+            echo "target=${TARGET}"
+            echo "seed=${SEED}"
+            echo "budget=${BUDGET}"
+            echo "wall_seconds=${WALL_SECONDS}"
+            echo "control_start_stale=${CONTROL_START_STALE}"
+            echo "control_tick=${CONTROL_TICK}"
+            echo "max_control_steps=${MAX_CONTROL_STEPS}"
+            echo "environment_sha256=${ENV_SHA}"
+            echo 'control=closed-loop proportional reference tracking over 11 actual R3/I4 strategy knobs'
+            echo 'control_law=x_i(k+1)=x_i(k)+K_i*(r_i-x_i(k)); independent per-coordinate gains'
+            echo 'reference=empirical successful 8.040 operating point; no inverse/antipode/half-turn computed at runtime'
+            echo 'feedback=stagnation clock; verified settlement-distance improvement resets control toward inherited productive regime'
+            echo 'imagination=certificate-coherent I4 FUTUREBANK, max four legal backward steps'
+            echo 'creativity_status=derived/initialization quantity; not a controlled knob'
+            echo 'brute_fallback=disabled'
+            echo 'comparison_baseline=8.040 independently verified candidate at 6071 expansions, 36 proof tokens'
+            echo 'primary_endpoint=candidate proof substituted into frozen set.mm at prcom and accepted by independent verifier'
+          } | tee p8_041_protocol.txt
+
+      - name: Run 300k prcom feedback-control treatment
+        shell: bash
+        env:
+          PREDATOR_841_CONTROL_START_STALE: ${{ env.CONTROL_START_STALE }}
+          PREDATOR_841_CONTROL_TICK: ${{ env.CONTROL_TICK }}
+          PREDATOR_841_MAX_CONTROL_STEPS: ${{ env.MAX_CONTROL_STEPS }}
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8'
+          START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "started_utc=${START}" | tee p8_041_status.txt
+          timeout "${WALL_SECONDS}" python -u 'predator 8.041-R3I4-feedback-control.py' prove set.mm \
+            --label "${TARGET}" \
+            --budget "${BUDGET}" \
+            --max-depth 12 \
+            --agents 4 \
+            --creativity 0.55 \
+            --seed "${SEED}" \
+            --opener-cap 48 \
+            --max-open 8 \
+            --progress 250 \
+            --out prcom_p8_041.mm \
+            2>&1 | tee prcom_p8_041.log
+          RC=${PIPESTATUS[0]}
+          END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          {
+            echo "returncode=${RC}"
+            echo "ended_utc=${END}"
+          } | tee -a p8_041_status.txt
+          if [ "$RC" -eq 0 ] || [ "$RC" -eq 1 ] || [ "$RC" -eq 124 ]; then exit 0; fi
+          exit 2
+
+      - name: Independent certificate verification in frozen context
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          cd 'predator 8'
+          : > p8_041_external_cv.log
+          if [ ! -s prcom_p8_041.mm ]; then
+            echo 'No candidate certificate emitted.' | tee p8_041_external_cv.log
+            echo 'returncode=2' > p8_041_external_cv_status.txt
+            exit 1
+          fi
+
+          python - <<'PY' 2>&1 | tee -a p8_041_external_cv.log
+          import hashlib
+          import re
+          from pathlib import Path
+
+          env_path = Path('set.mm')
+          cand_path = Path('prcom_p8_041.mm')
+          out_path = Path('prcom_p8_041_context.mm')
+          env = env_path.read_text(encoding='utf-8')
+          cand = cand_path.read_text(encoding='utf-8')
+
+          candidate_proofs = list(re.finditer(r'\$=\s*(.*?)\s*\$\.', cand, re.S))
+          if len(candidate_proofs) != 1:
+              raise SystemExit(f'expected exactly one emitted candidate proof, found {len(candidate_proofs)}')
+          candidate_proof = candidate_proofs[0].group(1).strip()
+          if not candidate_proof:
+              raise SystemExit('candidate proof body is empty')
+
+          target_pattern = re.compile(
+              r'(?ms)(^[ \t]*prcom[ \t]+\$p\b.*?\$=\s*)(.*?)(\s*\$\.)'
+          )
+          targets = list(target_pattern.finditer(env))
+          if len(targets) != 1:
+              raise SystemExit(f'expected exactly one prcom theorem in frozen environment, found {len(targets)}')
+          m = targets[0]
+          patched = env[:m.start(2)] + candidate_proof + env[m.end(2):]
+          out_path.write_text(patched, encoding='utf-8')
+
+          print('contextual verification preparation: OK')
+          print('candidate_proof_tokens=', len(candidate_proof.split()))
+          print('frozen_environment_sha256=', hashlib.sha256(env.encode()).hexdigest())
+          print('context_file_sha256=', hashlib.sha256(patched.encode()).hexdigest())
+          print('verification_claim=the emitted candidate proof, not the stored prcom proof, occupies the prcom proof slot')
+          PY
+          PREP_RC=${PIPESTATUS[0]}
+          if [ "$PREP_RC" -ne 0 ]; then
+            echo "returncode=${PREP_RC}" > p8_041_external_cv_status.txt
+            exit "$PREP_RC"
+          fi
+
+          python -u ../metamath.py verify prcom_p8_041_context.mm \
+            2>&1 | tee -a p8_041_external_cv.log
+          RC=${PIPESTATUS[0]}
+          echo "returncode=${RC}" > p8_041_external_cv_status.txt
+          exit "$RC"
+
+      - name: Extract scientific summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          text = Path('prcom_p8_041.log').read_text(encoding='utf-8', errors='replace') if Path('prcom_p8_041.log').exists() else ''
+          cv_status = Path('p8_041_external_cv_status.txt').read_text(encoding='utf-8', errors='replace') if Path('p8_041_external_cv_status.txt').exists() else ''
+          candidate = re.search(r'candidate certificate found .* after\s+([0-9,]+)\s+expansions', text)
+          proof_steps = re.search(r'after\s+[0-9,]+\s+expansions,\s+[0-9.]+s;\s+([0-9,]+)\s+proof steps', text)
+          controls = re.findall(r'LEVEL-3 STRATEGY SWITCH[^\n]*-> CTRL_[0-9]+[^\n]*', text)
+          cv_rc_m = re.search(r'returncode=(\d+)', cv_status)
+          cv_rc = int(cv_rc_m.group(1)) if cv_rc_m else None
+          candidate_exp = int(candidate.group(1).replace(',', '')) if candidate else None
+          proof_step_count = int(proof_steps.group(1).replace(',', '')) if proof_steps else None
+
+          summary = {
+              'target': 'prcom',
+              'seed': 2301,
+              'budget': 300000,
+              'control_start_stale': 5200,
+              'control_tick': 100,
+              'max_control_steps': 24,
+              'controller': 'discrete-time proportional reference tracking with independent gains',
+              'runtime_inverse_or_half_turn': False,
+              'empirical_reference_source': 'independently verified Predator 8.040 successful operating point',
+              'comparison_baseline_8_040_expansions': 6071,
+              'comparison_baseline_8_040_proof_steps': 36,
+              'internal_verifier_reported_proof': 'OUTCOME: VERIFIED PROOF' in text,
+              'independent_context_verifier_returncode': cv_rc,
+              'independent_context_verifier_ok': cv_rc == 0,
+              'first_candidate_expansions': candidate_exp,
+              'candidate_proof_steps': proof_step_count,
+              'control_update_entries': len(controls),
+              'control_log_lines': controls,
+              'strategy_switches': text.count('LEVEL-3 STRATEGY SWITCH'),
+              'unknown_under_bounds': 'OUTCOME: UNKNOWN UNDER THE DECLARED RESOURCE BOUNDS' in text,
+              'scientific_endpoint_met': bool(candidate_exp is not None and cv_rc == 0),
+              'expansion_delta_vs_8_040': (candidate_exp - 6071) if candidate_exp is not None else None,
+              'verification_mode': 'replace only prcom proof body in frozen set.mm with emitted candidate proof, then verify the resulting full environment',
+              'protocol': 'R3 supervisory control + certificate-coherent I4 FUTUREBANK + proportional knob regulation; no brute fallback and no runtime inverse.'
+          }
+          Path('p8_041_summary.json').write_text(json.dumps(summary, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Upload full experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-041-prcom-feedback-control-${{ github.run_id }}
+          path: |
+            p8_041_selftest.log
+            predator 8/p8_041_protocol.txt
+            predator 8/p8_041_status.txt
+            predator 8/prcom_p8_041.log
+            predator 8/p8_041_external_cv.log
+            predator 8/p8_041_external_cv_status.txt
+            predator 8/p8_041_summary.json
+            predator 8/prcom_p8_041.mm
+          if-no-files-found: ignore
+          retention-days: 90
