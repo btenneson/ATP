@@ -1,0 +1,119 @@
+name: Guided verifier-gated ACO on prcom
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - '.github/workflows/aco-prcom-guided.yml'
+      - 'experiments/aco_prcom_guided.py'
+      - 'experiments/ACO_PRCOM_GUIDED_PROTOCOL.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guided-prcom:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [aco, control]
+    name: guided-prcom-${{ matrix.arm }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reassemble frozen Predator formal runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile Predator_8.001_FROZEN.py
+          cd ../..
+          python -m py_compile experiments/aco_prcom_guided.py
+
+      - name: Download pinned historical set.mm as formal environment only
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 --fail -o /tmp/set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum /tmp/set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          echo 'No training: set.mm supplies only the strict formal prefix before prcom.'
+
+      - name: Run guided ACO or no-learning control
+        shell: bash
+        run: |
+          set -euo pipefail
+          arm='${{ matrix.arm }}'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o "aco_prcom_guided_${arm}.time" \
+          python -u experiments/aco_prcom_guided.py /tmp/set.mm \
+            --engine 'predator 8/recovered8_002/Predator_8.001_FROZEN.py' \
+            --target prcom \
+            --arm "$arm" \
+            --seed 2301 \
+            --batches 120 \
+            --ants 8 \
+            --stages '64:16,128:32,256:64,512:128' \
+            --alpha 1.0 \
+            --beta 1.25 \
+            --epsilon 0.10 \
+            --rho 0.15 \
+            --partial-q 5.0 \
+            --partial-elite 4 \
+            --elite-pool-size 4 \
+            --wall-seconds 2700 \
+            --checkpoint "aco_prcom_guided_${arm}.jsonl" \
+            --out "aco_prcom_guided_${arm}.json" \
+            2>&1 | tee "aco_prcom_guided_${arm}.log"
+
+      - name: Summarize outcome
+        if: always()
+        shell: bash
+        run: |
+          arm='${{ matrix.arm }}'
+          {
+            echo 'Guided verifier-gated ACO on prcom — revision 2'
+            echo "arm=${arm}"
+            echo 'No training. No target-proof replay. No downstream theorem. No revision controller.'
+            echo 'ACO defaults: alpha=1 beta=1.25 epsilon=0.10 rho=0.15; staged depth/width; mandatory root restart.'
+            cat "aco_prcom_guided_${arm}.time" 2>/dev/null || true
+            tail -n 30 "aco_prcom_guided_${arm}.jsonl" 2>/dev/null || true
+            cat "aco_prcom_guided_${arm}.json" 2>/dev/null || true
+          } | tee "aco_prcom_guided_${arm}.summary"
+
+      - name: Upload experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-prcom-guided-${{ matrix.arm }}-${{ github.run_id }}
+          path: |
+            experiments/ACO_PRCOM_GUIDED_PROTOCOL.md
+            experiments/aco_prcom_guided.py
+            aco_prcom_guided_${{ matrix.arm }}.json
+            aco_prcom_guided_${{ matrix.arm }}.jsonl
+            aco_prcom_guided_${{ matrix.arm }}.log
+            aco_prcom_guided_${{ matrix.arm }}.summary
+            aco_prcom_guided_${{ matrix.arm }}.time
+          if-no-files-found: ignore
+          retention-days: 90
