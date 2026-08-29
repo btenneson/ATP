@@ -7,41 +7,53 @@ On the same blind ``prcom`` target, does the intended causal self-awareness
 architecture behave differently when R3 control remains sovereign over search
 strategy and, after the ordinary strategy family is exhausted without progress,
 uses one geometric escape operation: rotate every strategy knob by a half-turn
-in a normalized continuous relaxation, then continue ordinary proof search?
+in a continuous circle embedding, then continue ordinary proof search?
 
 Architecture
 ------------
 * I4 is the certificate-coherent four-ply FUTUREBANK from Predator 8.007.
   Imagined states never count as proof.
-* R3 is the operational metacontroller from Predator 8.006.  It observes live
+* R3 is the operational metacontroller from Predator 8.006. It observes live
   settlement-distance/stagnation signals and controls how search resources are
   deployed.
 * There is no blind transition to a separate brute-force controller in this
-  treatment.  The declared expansion budget remains under R3/I4 supervision.
-* Creativity is NOT a rotated coordinate.  It is treated as a population-level
-  derived/initialization quantity.  The rotated coordinates are the actual
+  treatment. The declared expansion budget remains under R3/I4 supervision.
+* Creativity is NOT a rotated coordinate. It is treated as a population-level
+  derived/initialization quantity. The rotated coordinates are the actual
   strategy controls used by R3/I4.
 
 Half-turn
 ---------
-For each strategy-control coordinate x_i, take the min/max values already
-present in the frozen COMPASS/CERTIFY/DIVERSIFY/LEAN family, relax to
-u_i in [0,1], apply the circle half-turn
+For each bounded strategy-control coordinate x_i in [a_i,b_i], normalize
 
-    u_i -> (u_i + 1/2) mod 1,
+    u_i = (x_i-a_i)/(b_i-a_i) in [0,1].
 
-and decode to the legal execution type.  Integer controls are rounded only at
-that final decoding boundary; the involution lives in the relaxed coordinate.
+Embed that interval as the cosine coordinate of a circle,
+
+    u_i = (1-cos(theta_i))/2,   theta_i in [0,pi].
+
+Then apply the genuine circle half-turn
+
+    theta_i -> theta_i + pi (mod 2pi).
+
+Decoding the antipode gives
+
+    u_i -> 1-u_i,
+
+so the induced legal-knob map is x_i -> a_i+b_i-x_i. This is an involution even
+at the interval endpoints; unlike a naive u -> u+1/2 mod 1 normalization, it
+does not incorrectly identify the distinct legal settings u=0 and u=1.
+Integer controls are rounded only at the execution boundary.
 
 The first half-turn is triggered only after LEAN itself has had a refractory
-window with no settlement-distance improvement.  If progress occurs, the
+window with no settlement-distance improvement. If progress occurs, the
 existing controller's stagnation clock resets and local strategy refinement
-resumes.  If no progress occurs, ROTATED remains active rather than immediately
+resumes. If no progress occurs, ROTATED remains active rather than immediately
 rotating back, preventing a two-cycle.
 
 Verifier invariant
 ------------------
-Nothing here adds or relaxes a Metamath rule.  A theorem claim still requires an
+Nothing here adds or relaxes a Metamath rule. A theorem claim still requires an
 emitted finite certificate accepted by the ordinary verifier.
 """
 from __future__ import annotations
@@ -97,12 +109,23 @@ def _bounds(key):
 def _relax(key, value):
     lo, hi = _bounds(key)
     if math.isclose(lo, hi):
-        return 0.0
+        return 0.5
     return (float(value) - lo) / (hi - lo)
 
 
+def _angle_from_u(u):
+    """Canonical semicircle embedding u=(1-cos(theta))/2."""
+    u = min(1.0, max(0.0, float(u)))
+    return math.acos(1.0 - 2.0 * u)
+
+
+def _u_from_angle(theta):
+    return 0.5 * (1.0 - math.cos(float(theta)))
+
+
 def _half_turn_u(u):
-    return (float(u) + 0.5) % 1.0
+    theta = _angle_from_u(u)
+    return _u_from_angle((theta + math.pi) % (2.0 * math.pi))
 
 
 def _decode(key, u):
@@ -110,14 +133,18 @@ def _decode(key, u):
     if math.isclose(lo, hi):
         x = lo
     else:
-        x = lo + float(u) * (hi - lo)
+        x = lo + min(1.0, max(0.0, float(u))) * (hi - lo)
     if key in INTEGER_KNOBS:
         return max(1, int(round(x)))
     return float(x)
 
 
+def _rotate_value(key, value):
+    return _decode(key, _half_turn_u(_relax(key, value)))
+
+
 def half_turn_strategy(source="LEAN"):
-    """Rotate every actual strategy knob by pi in its relaxed circle."""
+    """Rotate every actual strategy knob by pi in its circle embedding."""
     src = BASE_FAMILY[source]
     out = {}
     relaxed_before = {}
@@ -171,25 +198,38 @@ def _selftest(a):
         for k in KNOBS
     )
     bounded = True
-    half_turn_ok = True
+    geometric_involution_ok = True
+    decoded_involution_ok = True
+    endpoint_ok = True
     for key in KNOBS:
         lo, hi = _bounds(key)
         x = float(ROTATED[key])
         bounded = bounded and (lo - 1e-12 <= x <= hi + 1e-12)
         u = ROTATED_FROM_U[key]
-        # The geometric state is exactly an involution before integer decoding.
-        half_turn_ok = half_turn_ok and math.isclose(
+        geometric_involution_ok = geometric_involution_ok and math.isclose(
             _half_turn_u(_half_turn_u(u)), u, rel_tol=0, abs_tol=1e-12)
+        original = BASE_FAMILY["LEAN"][key]
+        twice = _rotate_value(key, _rotate_value(key, original))
+        decoded_involution_ok = decoded_involution_ok and math.isclose(
+            float(twice), float(original), rel_tol=0, abs_tol=1e-12)
+        if not math.isclose(lo, hi):
+            endpoint_ok = endpoint_ok and math.isclose(_half_turn_u(0.0), 1.0, abs_tol=1e-12)
+            endpoint_ok = endpoint_ok and math.isclose(_half_turn_u(1.0), 0.0, abs_tol=1e-12)
     no_creativity_knob = "creativity" not in KNOBS
     boundary_ok = (
         supervisory_strategy_for(ROTATE_STALE - 1, 0) == "LEAN"
         and supervisory_strategy_for(ROTATE_STALE, 0) == "ROTATED"
         and supervisory_strategy_for(ROTATE_STALE + 5000, 0) == "ROTATED"
     )
-    ok = different and bounded and half_turn_ok and no_creativity_knob and boundary_ok
+    ok = (
+        different and bounded and geometric_involution_ok and decoded_involution_ok
+        and endpoint_ok and no_creativity_knob and boundary_ok
+    )
     print("  [8.040] supervisory half-turn invariants")
     print("      inherited four-state R3 regression: passed")
-    print("      relaxed R(R(c))=c: %s" % half_turn_ok)
+    print("      antipodal circle R(R(u))=u: %s" % geometric_involution_ok)
+    print("      decoded knob R(R(x))=x: %s" % decoded_involution_ok)
+    print("      distinct interval endpoints swap correctly: %s" % endpoint_ok)
     print("      decoded knobs legal and changed: %s" % (bounded and different))
     print("      creativity excluded from knob vector: %s" % no_creativity_knob)
     print("      R3 LEAN->ROTATED boundary/persistence: %s" % boundary_ok)
