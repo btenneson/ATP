@@ -1,0 +1,14 @@
+Predator 8.041 feedback-control treatment trigger.
+
+Mechanism benchmark: prcom
+Seed: 2301
+Budget: 300000 expansions
+Frozen set.mm: cd577894d8e6bf8b4fe8014c0d525d531507e4b7
+Controller: discrete-time proportional reference tracking over 11 actual strategy knobs
+Control start: stale=5200
+Control tick: 100 stale expansions
+Reference: empirically successful 8.040 operating point
+Runtime inverse/half-turn: disabled
+Brute fallback: disabled
+Primary endpoint: emitted prcom certificate accepted after contextual substitution into frozen set.mm by independent Metamath verifier
+Comparison baseline: 8.040 = 6071 expansions, 36 proof steps
