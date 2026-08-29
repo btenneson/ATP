@@ -1,0 +1,255 @@
+name: Predator8 sgrpcl frozen half-turn transfer
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - 'experiments/TRIGGER_P8_SGRPCL_ROTATION_STALE5200_2026_08_29.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predator8-sgrpcl-rotation-stale5200
+  cancel-in-progress: false
+
+jobs:
+  treatment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 370
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      TARGET: sgrpcl
+      SEED: '2301'
+      BUDGET: '300000'
+      WALL_SECONDS: '21400'
+      ROTATE_STALE: '5200'
+    steps:
+      - name: Check out selected ref
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile frozen 8.040 treatment lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            metamath.py setmm_grammar.py \
+            'predator 8/predator 8.001.py' \
+            'predator 8/predator 8.002-compass.py' \
+            'predator 8/predator 8.003-R3I4.py' \
+            'predator 8/predator 8.004-R3I4-indexed.py' \
+            'predator 8/predator 8.005-R3I4-terminaldv.py' \
+            'predator 8/predator 8.006-R3I4-strategy-switch.py' \
+            'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' \
+            'predator 8/predator 8.040-R3I4-supervisory-rotation.py'
+
+      - name: Self-test frozen half-turn architecture at 5200
+        shell: bash
+        env:
+          PREDATOR_840_ROTATE_STALE: ${{ env.ROTATE_STALE }}
+        run: |
+          set -euo pipefail
+          python -u 'predator 8/predator 8.040-R3I4-supervisory-rotation.py' selftest \
+            2>&1 | tee p8_sgrpcl_5200_selftest.log
+
+      - name: Download and hash frozen set.mm environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          test "$ENV_SHA" = '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
+          {
+            echo 'experiment=frozen cross-theorem transfer test'
+            echo 'mechanism=frozen Predator 8.040 supervisory half-turn at stale 5200'
+            echo 'source_configuration=successful prcom timing-control run 33267831067'
+            echo 'verification_harness=context-substitution-v2'
+            echo "target=${TARGET}"
+            echo "seed=${SEED}"
+            echo "budget=${BUDGET}"
+            echo "wall_seconds=${WALL_SECONDS}"
+            echo "rotate_stale=${ROTATE_STALE}"
+            echo "environment_sha256=${ENV_SHA}"
+            echo 'only_intended_scientific_change_vs_prcom_5200=target prcom -> sgrpcl'
+            echo 'sgrpcl_specific_tuning=none'
+            echo 'half_turn=all 11 actual R3/I4 strategy knobs; creativity excluded'
+            echo 'brute_fallback=disabled'
+            echo 'max_depth=12'
+            echo 'agents=4'
+            echo 'opener_cap=48'
+            echo 'max_open=8'
+            echo 'primary_endpoint=emitted sgrpcl candidate substituted only into the sgrpcl proof slot of frozen set.mm and accepted by independent verifier'
+          } | tee p8_sgrpcl_5200_protocol.txt
+
+      - name: Run 300k sgrpcl frozen-transfer treatment
+        shell: bash
+        env:
+          PREDATOR_840_ROTATE_STALE: ${{ env.ROTATE_STALE }}
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8'
+          START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "started_utc=${START}" | tee p8_sgrpcl_5200_status.txt
+          timeout "${WALL_SECONDS}" python -u 'predator 8.040-R3I4-supervisory-rotation.py' prove set.mm \
+            --label "${TARGET}" \
+            --budget "${BUDGET}" \
+            --max-depth 12 \
+            --agents 4 \
+            --creativity 0.55 \
+            --seed "${SEED}" \
+            --opener-cap 48 \
+            --max-open 8 \
+            --progress 250 \
+            --out sgrpcl_rotation_5200.mm \
+            2>&1 | tee sgrpcl_rotation_5200.log
+          RC=${PIPESTATUS[0]}
+          END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          {
+            echo "returncode=${RC}"
+            echo "ended_utc=${END}"
+          } | tee -a p8_sgrpcl_5200_status.txt
+          # 0=internal verifier accepted candidate, 1=bounded UNKNOWN, 124=wall cap.
+          if [ "$RC" -eq 0 ] || [ "$RC" -eq 1 ] || [ "$RC" -eq 124 ]; then exit 0; fi
+          exit 2
+
+      - name: Independent certificate verification in frozen context
+        if: always()
+        shell: bash
+        env:
+          TARGET: ${{ env.TARGET }}
+        run: |
+          set +e
+          set -o pipefail
+          cd 'predator 8'
+          : > p8_sgrpcl_5200_external_cv.log
+          if [ ! -s sgrpcl_rotation_5200.mm ]; then
+            echo 'No candidate certificate emitted; external CV not applicable.' | tee p8_sgrpcl_5200_external_cv.log
+            echo 'returncode=2' > p8_sgrpcl_5200_external_cv_status.txt
+            exit 0
+          fi
+
+          python - <<'PY' 2>&1 | tee -a p8_sgrpcl_5200_external_cv.log
+          import hashlib
+          import os
+          import re
+          from pathlib import Path
+
+          target = os.environ['TARGET']
+          env_path = Path('set.mm')
+          cand_path = Path('sgrpcl_rotation_5200.mm')
+          out_path = Path('sgrpcl_rotation_5200_context.mm')
+          env = env_path.read_text(encoding='utf-8')
+          cand = cand_path.read_text(encoding='utf-8')
+
+          candidate_proofs = list(re.finditer(r'\$=\s*(.*?)\s*\$\.', cand, re.S))
+          if len(candidate_proofs) != 1:
+              raise SystemExit(f'expected exactly one emitted candidate proof, found {len(candidate_proofs)}')
+          candidate_proof = candidate_proofs[0].group(1).strip()
+          if not candidate_proof:
+              raise SystemExit('candidate proof body is empty')
+
+          target_pattern = re.compile(
+              rf'(?ms)(^[ \t]*{re.escape(target)}[ \t]+\$p\b.*?\$=\s*)(.*?)(\s*\$\.)'
+          )
+          targets = list(target_pattern.finditer(env))
+          if len(targets) != 1:
+              raise SystemExit(f'expected exactly one {target} theorem in frozen environment, found {len(targets)}')
+          m = targets[0]
+          patched = env[:m.start(2)] + candidate_proof + env[m.end(2):]
+          out_path.write_text(patched, encoding='utf-8')
+
+          print('contextual verification preparation: OK')
+          print('target=', target)
+          print('candidate_proof_tokens=', len(candidate_proof.split()))
+          print('frozen_environment_sha256=', hashlib.sha256(env.encode()).hexdigest())
+          print('context_file_sha256=', hashlib.sha256(patched.encode()).hexdigest())
+          print(f'verification_claim=the emitted candidate proof occupies only the {target} proof slot')
+          PY
+          PREP_RC=${PIPESTATUS[0]}
+          if [ "$PREP_RC" -ne 0 ]; then
+            echo "returncode=${PREP_RC}" > p8_sgrpcl_5200_external_cv_status.txt
+            exit "$PREP_RC"
+          fi
+
+          python -u ../metamath.py verify sgrpcl_rotation_5200_context.mm \
+            2>&1 | tee -a p8_sgrpcl_5200_external_cv.log
+          RC=${PIPESTATUS[0]}
+          echo "returncode=${RC}" > p8_sgrpcl_5200_external_cv_status.txt
+          exit "$RC"
+
+      - name: Extract frozen-transfer scientific summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          text = Path('sgrpcl_rotation_5200.log').read_text(encoding='utf-8', errors='replace') if Path('sgrpcl_rotation_5200.log').exists() else ''
+          status = Path('p8_sgrpcl_5200_status.txt').read_text(encoding='utf-8', errors='replace') if Path('p8_sgrpcl_5200_status.txt').exists() else ''
+          cv_status = Path('p8_sgrpcl_5200_external_cv_status.txt').read_text(encoding='utf-8', errors='replace') if Path('p8_sgrpcl_5200_external_cv_status.txt').exists() else ''
+
+          candidate = re.search(r'candidate certificate found .* after\s+([0-9,]+)\s+expansions,\s+([0-9.]+)s;\s+([0-9,]+)\s+proof steps', text)
+          rotations = re.findall(r'LEVEL-3 STRATEGY SWITCH[^\n]*-> ROTATED[^\n]*', text)
+          run_rc_m = re.search(r'returncode=(\d+)', status)
+          cv_rc_m = re.search(r'returncode=(\d+)', cv_status)
+          run_rc = int(run_rc_m.group(1)) if run_rc_m else None
+          cv_rc = int(cv_rc_m.group(1)) if cv_rc_m else None
+
+          candidate_exp = int(candidate.group(1).replace(',', '')) if candidate else None
+          candidate_seconds = float(candidate.group(2)) if candidate else None
+          proof_steps = int(candidate.group(3).replace(',', '')) if candidate else None
+
+          summary = {
+              'target': 'sgrpcl',
+              'seed': 2301,
+              'budget': 300000,
+              'mechanism': 'frozen Predator 8.040 half-turn at stale 5200',
+              'transfer_source': 'prcom timing-control run 33267831067',
+              'sgrpcl_specific_tuning': False,
+              'rotate_stale_threshold': 5200,
+              'run_returncode': run_rc,
+              'first_candidate_expansions': candidate_exp,
+              'candidate_wall_seconds': candidate_seconds,
+              'candidate_proof_steps': proof_steps,
+              'rotation_entries': len(rotations),
+              'rotation_log_lines': rotations,
+              'internal_verifier_reported_proof': 'OUTCOME: VERIFIED PROOF' in text,
+              'independent_context_verifier_returncode': cv_rc,
+              'independent_context_verifier_ok': cv_rc == 0,
+              'unknown_under_bounds': 'OUTCOME: UNKNOWN UNDER THE DECLARED RESOURCE BOUNDS' in text,
+              'wall_timeout': run_rc == 124,
+              'scientific_endpoint_met': bool(candidate_exp is not None and cv_rc == 0),
+              'protocol': 'change target only: prcom -> sgrpcl; frozen seed/budget/depth/agents/opener cap/max-open/R3-I4/half-turn timing; no brute fallback.'
+          }
+          Path('p8_sgrpcl_5200_summary.json').write_text(json.dumps(summary, indent=2)+'\n', encoding='utf-8')
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Upload full experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: predator8-sgrpcl-rotation-stale5200-${{ github.run_id }}
+          path: |
+            p8_sgrpcl_5200_selftest.log
+            predator 8/p8_sgrpcl_5200_protocol.txt
+            predator 8/p8_sgrpcl_5200_status.txt
+            predator 8/sgrpcl_rotation_5200.log
+            predator 8/p8_sgrpcl_5200_external_cv.log
+            predator 8/p8_sgrpcl_5200_external_cv_status.txt
+            predator 8/p8_sgrpcl_5200_summary.json
+            predator 8/sgrpcl_rotation_5200.mm
+          if-no-files-found: ignore
+          retention-days: 90
