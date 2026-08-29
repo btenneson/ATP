@@ -1,0 +1,9 @@
+Launch frozen cross-theorem transfer experiment.
+
+Target: sgrpcl
+Source mechanism: successful prcom stale-5200 half-turn configuration
+Scientific freeze: no sgrpcl-specific tuning; change target only
+Seed: 2301
+Budget: 300000
+Rotate stale: 5200
+Frozen set.mm commit: cd577894d8e6bf8b4fe8014c0d525d531507e4b7
