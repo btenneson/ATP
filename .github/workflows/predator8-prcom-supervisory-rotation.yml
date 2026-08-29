@@ -69,6 +69,7 @@ jobs:
           test "$ENV_SHA" = '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
           {
             echo 'version=8.040-R3I4-supervisory-half-turn'
+            echo 'verification_harness=context-substitution-v2'
             echo "target=${TARGET}"
             echo "seed=${SEED}"
             echo "budget=${BUDGET}"
@@ -80,7 +81,7 @@ jobs:
             echo 'escape=half-turn of all R3/I4 strategy knobs in normalized continuous relaxation'
             echo 'creativity_status=derived/initialization quantity; not a rotated knob'
             echo 'brute_fallback=disabled in treatment architecture'
-            echo 'primary_endpoint=verifier-accepted Metamath certificate for prcom'
+            echo 'primary_endpoint=candidate proof substituted into frozen set.mm at prcom and accepted by independent verifier'
           } | tee p8_040_protocol.txt
 
       - name: Run 300k prcom treatment
@@ -111,22 +112,73 @@ jobs:
             echo "returncode=${RC}"
             echo "ended_utc=${END}"
           } | tee -a p8_040_status.txt
-          # 0=verified proof, 1=bounded unknown, 124=wall cap.
+          # 0=internal verifier accepted a candidate, 1=bounded unknown, 124=wall cap.
           if [ "$RC" -eq 0 ] || [ "$RC" -eq 1 ] || [ "$RC" -eq 124 ]; then exit 0; fi
           exit 2
 
-      - name: Independent certificate verification
+      - name: Independent certificate verification in frozen context
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+          set -o pipefail
           cd 'predator 8'
-          if [ -s prcom_p8_040.mm ]; then
-            python -u ../metamath.py verify prcom_p8_040.mm \
-              2>&1 | tee p8_040_external_cv.log
-          else
-            echo 'No standalone certificate emitted.' | tee p8_040_external_cv.log
+          : > p8_040_external_cv.log
+          if [ ! -s prcom_p8_040.mm ]; then
+            echo 'No candidate certificate emitted.' | tee p8_040_external_cv.log
+            echo 'returncode=2' > p8_040_external_cv_status.txt
+            exit 1
           fi
+
+          python - <<'PY' 2>&1 | tee -a p8_040_external_cv.log
+          import hashlib
+          import re
+          from pathlib import Path
+
+          env_path = Path('set.mm')
+          cand_path = Path('prcom_p8_040.mm')
+          out_path = Path('prcom_p8_040_context.mm')
+
+          env = env_path.read_text(encoding='utf-8')
+          cand = cand_path.read_text(encoding='utf-8')
+
+          candidate_proofs = list(re.finditer(r'\$=\s*(.*?)\s*\$\.', cand, re.S))
+          if len(candidate_proofs) != 1:
+              raise SystemExit(f'expected exactly one emitted candidate proof, found {len(candidate_proofs)}')
+          candidate_proof = candidate_proofs[0].group(1).strip()
+          if not candidate_proof:
+              raise SystemExit('candidate proof body is empty')
+
+          target_pattern = re.compile(
+              r'(?ms)(^[ \t]*prcom[ \t]+\$p\b.*?\$=\s*)(.*?)(\s*\$\.)'
+          )
+          targets = list(target_pattern.finditer(env))
+          if len(targets) != 1:
+              raise SystemExit(f'expected exactly one prcom theorem in frozen environment, found {len(targets)}')
+          m = targets[0]
+
+          # Replace ONLY prcom's stored proof body.  The statement, all prior
+          # declarations, and the remainder of the frozen environment are unchanged.
+          patched = env[:m.start(2)] + candidate_proof + env[m.end(2):]
+          out_path.write_text(patched, encoding='utf-8')
+
+          print('contextual verification preparation: OK')
+          print('candidate_proof_tokens=', len(candidate_proof.split()))
+          print('frozen_environment_sha256=', hashlib.sha256(env.encode()).hexdigest())
+          print('context_file_sha256=', hashlib.sha256(patched.encode()).hexdigest())
+          print('verification_claim=the emitted candidate proof, not the stored prcom proof, occupies the prcom proof slot')
+          PY
+          PREP_RC=${PIPESTATUS[0]}
+          if [ "$PREP_RC" -ne 0 ]; then
+            echo "returncode=${PREP_RC}" > p8_040_external_cv_status.txt
+            exit "$PREP_RC"
+          fi
+
+          python -u ../metamath.py verify prcom_p8_040_context.mm \
+            2>&1 | tee -a p8_040_external_cv.log
+          RC=${PIPESTATUS[0]}
+          echo "returncode=${RC}" > p8_040_external_cv_status.txt
+          exit "$RC"
 
       - name: Extract scientific summary
         if: always()
@@ -137,22 +189,31 @@ jobs:
           python - <<'PY'
           import json, re
           from pathlib import Path
+
           text = Path('prcom_p8_040.log').read_text(encoding='utf-8', errors='replace') if Path('prcom_p8_040.log').exists() else ''
           cv = Path('p8_040_external_cv.log').read_text(encoding='utf-8', errors='replace') if Path('p8_040_external_cv.log').exists() else ''
+          cv_status = Path('p8_040_external_cv_status.txt').read_text(encoding='utf-8', errors='replace') if Path('p8_040_external_cv_status.txt').exists() else ''
           candidate = re.search(r'candidate certificate found .* after\s+([0-9,]+)\s+expansions', text)
-          rotations = len(re.findall(r'LEVEL-3 STRATEGY SWITCH[^\n]*-> ROTATED', text))
+          rotations = re.findall(r'LEVEL-3 STRATEGY SWITCH[^\n]*-> ROTATED[^\n]*', text)
+          cv_rc_m = re.search(r'returncode=(\d+)', cv_status)
+          cv_rc = int(cv_rc_m.group(1)) if cv_rc_m else None
+          candidate_exp = int(candidate.group(1).replace(',', '')) if candidate else None
+
           summary = {
               'target': 'prcom',
               'seed': 2301,
               'budget': 300000,
-              'rotate_stale': 6000,
-              'verified_proof_reported': 'OUTCOME: VERIFIED PROOF' in text,
-              'independent_cv_ok': ('0 errors' in cv.lower() or 'verified' in cv.lower() or 'ok' in cv.lower()) if cv else False,
-              'first_candidate_expansions': int(candidate.group(1).replace(',', '')) if candidate else None,
+              'rotate_stale_threshold': 6000,
+              'internal_verifier_reported_proof': 'OUTCOME: VERIFIED PROOF' in text,
+              'independent_context_verifier_returncode': cv_rc,
+              'independent_context_verifier_ok': cv_rc == 0,
+              'first_candidate_expansions': candidate_exp,
               'strategy_switches': text.count('LEVEL-3 STRATEGY SWITCH'),
-              'rotation_entries': rotations,
-              'rotated_mentions': text.count('ROTATED'),
+              'rotation_entries': len(rotations),
+              'rotation_log_lines': rotations,
               'unknown_under_bounds': 'OUTCOME: UNKNOWN UNDER THE DECLARED RESOURCE BOUNDS' in text,
+              'scientific_endpoint_met': bool(candidate_exp is not None and cv_rc == 0),
+              'verification_mode': 'replace only prcom proof body in frozen set.mm with emitted candidate proof, then verify the resulting full environment',
               'protocol': 'R3 supervisory control + certificate-coherent I4 FUTUREBANK + half-turn escape; no brute fallback.'
           }
           Path('p8_040_summary.json').write_text(json.dumps(summary, indent=2)+'\n', encoding='utf-8')
@@ -170,6 +231,7 @@ jobs:
             predator 8/p8_040_status.txt
             predator 8/prcom_p8_040.log
             predator 8/p8_040_external_cv.log
+            predator 8/p8_040_external_cv_status.txt
             predator 8/p8_040_summary.json
             predator 8/prcom_p8_040.mm
           if-no-files-found: ignore
