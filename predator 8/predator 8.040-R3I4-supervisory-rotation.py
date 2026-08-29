@@ -63,11 +63,11 @@ BASE6 = BASE7.BASE6
 P8 = BASE7.P8
 P8.VERSION = "8.040-R3I4-supervisory-half-turn"
 
-# R3 already enters LEAN at stale >= 5000.  Give that lowest-overhead regime a
+# R3 already enters LEAN at stale >= 5000. Give that lowest-overhead regime a
 # bounded refinement/refractory window before a global half-turn is permitted.
 ROTATE_STALE = max(5200, int(os.environ.get("PREDATOR_840_ROTATE_STALE", "6000")))
 
-# These are the actual R3/I4 strategy controls consumed by 8.006.  Creativity is
+# These are the actual R3/I4 strategy controls consumed by 8.006. Creativity is
 # intentionally absent: it is not a knob in this treatment.
 KNOBS = (
     "imagine_top",
@@ -153,9 +153,19 @@ _ORIGINAL_SELFTEST = P8.cmd_selftest
 
 
 def _selftest(a):
-    rc = _ORIGINAL_SELFTEST(a)
+    # The inherited 8.006 test deliberately asserts its frozen four-state
+    # thresholds, including stale=6000 -> LEAN. Run that regression test against
+    # the frozen controller first, then restore 8.040's supervisory override and
+    # test the new ROTATED boundary separately. This keeps both claims honest.
+    active_strategy_for = BASE6._strategy_for
+    BASE6._strategy_for = _ORIGINAL_STRATEGY_FOR
+    try:
+        rc = _ORIGINAL_SELFTEST(a)
+    finally:
+        BASE6._strategy_for = active_strategy_for
     if rc:
         return rc
+
     different = any(
         not math.isclose(float(ROTATED[k]), float(BASE_FAMILY["LEAN"][k]), rel_tol=0, abs_tol=1e-12)
         for k in KNOBS
@@ -171,11 +181,18 @@ def _selftest(a):
         half_turn_ok = half_turn_ok and math.isclose(
             _half_turn_u(_half_turn_u(u)), u, rel_tol=0, abs_tol=1e-12)
     no_creativity_knob = "creativity" not in KNOBS
-    ok = different and bounded and half_turn_ok and no_creativity_knob
+    boundary_ok = (
+        supervisory_strategy_for(ROTATE_STALE - 1, 0) == "LEAN"
+        and supervisory_strategy_for(ROTATE_STALE, 0) == "ROTATED"
+        and supervisory_strategy_for(ROTATE_STALE + 5000, 0) == "ROTATED"
+    )
+    ok = different and bounded and half_turn_ok and no_creativity_knob and boundary_ok
     print("  [8.040] supervisory half-turn invariants")
+    print("      inherited four-state R3 regression: passed")
     print("      relaxed R(R(c))=c: %s" % half_turn_ok)
     print("      decoded knobs legal and changed: %s" % (bounded and different))
     print("      creativity excluded from knob vector: %s" % no_creativity_knob)
+    print("      R3 LEAN->ROTATED boundary/persistence: %s" % boundary_ok)
     print("      %s\n" % ("passed" if ok else "FAILED"))
     return 0 if ok else 1
 
