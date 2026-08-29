@@ -1,0 +1,104 @@
+name: Untrained ACO on prcom pilot
+
+on:
+  push:
+    branches: [aco-notald-transfer]
+    paths:
+      - '.github/workflows/aco-prcom-untrained.yml'
+      - 'experiments/aco_prcom_untrained.py'
+      - 'experiments/ACO_PRCOM_UNTRAINED_PROTOCOL.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  aco-prcom:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reassemble frozen Predator formal runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile Predator_8.001_FROZEN.py
+          cd ../..
+          python -m py_compile experiments/aco_prcom_untrained.py
+
+      - name: Download pinned historical set.mm as formal environment only
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 --fail -o /tmp/set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum /tmp/set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          echo 'No training is performed. set.mm is used only for the prefix formal environment before prcom.'
+
+      - name: Run preregistered ACO and no-learning control
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o aco_prcom.time \
+          python -u experiments/aco_prcom_untrained.py /tmp/set.mm \
+            --engine 'predator 8/recovered8_002/Predator_8.001_FROZEN.py' \
+            --target prcom \
+            --seed 2301 \
+            --batches 200 \
+            --ants 8 \
+            --ant-budget 64 \
+            --alpha 1.0 \
+            --rho 0.15 \
+            --partial-q 5.0 \
+            --partial-elite 4 \
+            --max-open 16 \
+            --out aco_prcom_result.json \
+            2>&1 | tee aco_prcom.log
+
+      - name: Summarize outcome
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo 'Untrained ACO on prcom — frozen pilot'
+            echo 'No set.mm training. No revision. No ML. No target-proof replay. No downstream access.'
+            echo 'ACO: alpha=1.0 beta=0 rho=0.15 partial_q=5 partial_elite=4 seed=2301'
+            cat aco_prcom.time 2>/dev/null || true
+            cat aco_prcom.log 2>/dev/null || true
+          } | tee aco_prcom.summary
+
+      - name: Upload experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aco-prcom-untrained-${{ github.run_id }}
+          path: |
+            experiments/ACO_PRCOM_UNTRAINED_PROTOCOL.md
+            experiments/aco_prcom_untrained.py
+            aco_prcom_result.json
+            aco_prcom.log
+            aco_prcom.summary
+            aco_prcom.time
+          if-no-files-found: ignore
+          retention-days: 90
