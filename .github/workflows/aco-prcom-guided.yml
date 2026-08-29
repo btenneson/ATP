@@ -20,7 +20,7 @@ jobs:
         arm: [aco, control]
     name: guided-prcom-${{ matrix.arm }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 360
     env:
       PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
 
@@ -82,7 +82,7 @@ jobs:
             --partial-q 5.0 \
             --partial-elite 4 \
             --elite-pool-size 4 \
-            --wall-seconds 2700 \
+            --wall-seconds 21000 \
             --checkpoint "aco_prcom_guided_${arm}.jsonl" \
             --out "aco_prcom_guided_${arm}.json" \
             2>&1 | tee "aco_prcom_guided_${arm}.log"
