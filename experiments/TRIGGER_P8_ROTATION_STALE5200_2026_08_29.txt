@@ -1,0 +1,8 @@
+Timing-controlled comparison experiment.
+
+Target: prcom
+Seed: 2301
+Budget: 300000 expansions
+Mechanism: frozen Predator 8.040 supervisory half-turn
+Only intended change vs original 8.040: ROTATE_STALE 6000 -> 5200
+Purpose: compare one-shot full rotation and Predator 8.041 gradual feedback control with the first intervention aligned at stale=5200.
