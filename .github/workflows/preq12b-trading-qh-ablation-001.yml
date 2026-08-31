@@ -1,0 +1,236 @@
+name: preq12b Trading-QH-BANK ablation 001
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/preq12b-trading-qh-001
+    paths:
+      - experiments/PREQ12B_TRADING_QH_001_TRIGGER.txt
+
+permissions:
+  contents: read
+
+jobs:
+  ablation:
+    name: preq12b-${{ matrix.arm }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arm:
+          - baseline
+          - trading
+          - qh
+          - trading_qh
+          - trading_qh_bank
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+      ARM: ${{ matrix.arm }}
+    steps:
+      - name: Check out experiment branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install recovered runtime dependencies
+        run: python -m pip install --quiet numpy scipy scikit-learn joblib
+
+      - name: Reassemble and compile recovered Predator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -t /tmp/recovered8_002_runtime.zip
+          unzip -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile \
+            Predator_8.001_FROZEN.py predator8_ml_ranker.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py predator8_015_bidirectional_attention.py \
+            predator8_016_prcom_exactify.py predator8_017_fullgraph_exactify.py \
+            predator8_018_bailout.py predator8_019_selective_sink.py \
+            predator8_019_target.py predator8_028_prcom_quotient_awareness.py \
+            predator8_031_preq12b_trading_qh_ablation.py bounded_exactifier.py \
+            settlement_authority.py predator8_authority_adapter.py _loss.py
+
+      - name: Download frozen historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail \
+            -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          echo "environment_sha256=${ENV_SHA}" | tee preq12b_${ARM}_hashes.txt
+          test "${ENV_SHA}" = "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Run preq12b ablation arm
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          LOG="preq12b_${ARM}.log"
+          OUT="preq12b_${ARM}.mm"
+          python -u predator8_031_preq12b_trading_qh_ablation.py \
+            --arm "${ARM}" \
+            set.mm \
+            --engine Predator_8.001_FROZEN.py \
+            --no-ml \
+            --label preq12b \
+            --budget 60000 \
+            --brute-reserve 15000 \
+            --max-depth 14 \
+            --max-open 10 \
+            --seed 2301 \
+            --creativity 0.55 \
+            --opener-cap 64 \
+            --progress 500 \
+            --frontier-limit 160000 \
+            --probe-depth 3 \
+            --probe-cap 2500 \
+            --probe-total-cap 5000 \
+            --probe-next-layer 40000 \
+            --out "${OUT}" \
+            2>&1 | tee "${LOG}"
+          RC=${PIPESTATUS[0]}
+          echo "controller_rc=${RC}" | tee "preq12b_${ARM}_rc.txt"
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then
+            echo "Protocol/runtime failure rc=${RC}" >&2
+            exit 2
+          fi
+          exit 0
+
+      - name: Parse arm telemetry
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python - <<'PY'
+          import json, os, pathlib, re
+          arm = os.environ['ARM']
+          p = pathlib.Path(f'preq12b_{arm}.log')
+          text = p.read_text(encoding='utf-8', errors='replace') if p.exists() else ''
+          verified = 'OUTCOME: VERIFIED PROOF' in text
+          m = re.search(r'candidate found after total ([\d,]+) expansions, ([0-9.]+)s; proof steps=([\d,]+)', text)
+          expansions = int(m.group(1).replace(',', '')) if m else None
+          elapsed = float(m.group(2)) if m else None
+          proof_steps = int(m.group(3).replace(',', '')) if m else None
+          if m is None:
+              u = re.search(r'UNKNOWN UNDER DECLARED RESOURCE BOUNDS \(([\d,]+) expansions, ([0-9.]+)s\)', text)
+              if u:
+                  expansions = int(u.group(1).replace(',', ''))
+                  elapsed = float(u.group(2))
+          qp = [int(x) for x in re.findall(r'\[QUOTIENT-PRUNE\] count=(\d+)', text)]
+          bh = [int(x) for x in re.findall(r'\[BANK-HIT\].*?retrieval=(\d+)', text)]
+          result = {
+              'arm': arm,
+              'verified': verified,
+              'outcome': 'VERIFIED PROOF' if verified else 'UNKNOWN/NO VERIFIED PROOF',
+              'expansions': expansions,
+              'elapsed_s': elapsed,
+              'proof_steps': proof_steps,
+              'quotient_prunes_reported': max(qp) if qp else 0,
+              'bank_retrievals_reported': max(bh) if bh else 0,
+              'budget': 60000,
+              'target': 'preq12b',
+              'seed': 2301,
+          }
+          pathlib.Path(f'result_{arm}.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Upload arm record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preq12b-trading-qh-001-${{ matrix.arm }}-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/preq12b_${{ matrix.arm }}.log
+            predator 8/recovered8_002/preq12b_${{ matrix.arm }}.mm
+            predator 8/recovered8_002/preq12b_${{ matrix.arm }}.mm.zero_gate.mm
+            predator 8/recovered8_002/preq12b_${{ matrix.arm }}_hashes.txt
+            predator 8/recovered8_002/preq12b_${{ matrix.arm }}_rc.txt
+            predator 8/recovered8_002/result_${{ matrix.arm }}.json
+          if-no-files-found: ignore
+
+  portfolio-summary:
+    name: preq12b-parallel-portfolio-summary
+    needs: ablation
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download arm records
+        uses: actions/download-artifact@v4
+        with:
+          pattern: preq12b-trading-qh-001-*-${{ github.run_id }}
+          path: arm_records
+          merge-multiple: true
+
+      - name: Compute sixth portfolio condition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, pathlib
+          files = sorted(pathlib.Path('arm_records').rglob('result_*.json'))
+          rows = [json.loads(p.read_text()) for p in files]
+          order = ['baseline','trading','qh','trading_qh','trading_qh_bank']
+          rows.sort(key=lambda r: order.index(r['arm']))
+          winners = [r for r in rows if r.get('verified') and r.get('elapsed_s') is not None]
+          portfolio = min(winners, key=lambda r: r['elapsed_s']) if winners else None
+          summary = {
+              'target': 'preq12b',
+              'arms': rows,
+              'parallel_portfolio': {
+                  'verified': portfolio is not None,
+                  'winner': portfolio['arm'] if portfolio else None,
+                  'ideal_parallel_elapsed_s': portfolio['elapsed_s'] if portfolio else None,
+                  'winner_expansions': portfolio['expansions'] if portfolio else None,
+                  'interpretation': 'minimum internal search time among the five independent verifier-gated arms'
+              }
+          }
+          pathlib.Path('preq12b_trading_qh_001_summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+          lines = [
+              '# preq12b Trading / QH / BANK Ablation 001', '',
+              '| Arm | Verified | Expansions | Search s | Proof steps | QH prunes | BANK hits |',
+              '|---|---:|---:|---:|---:|---:|---:|'
+          ]
+          for r in rows:
+              lines.append('| {arm} | {verified} | {exp} | {sec} | {steps} | {qp} | {bh} |'.format(
+                  arm=r['arm'], verified='YES' if r['verified'] else 'NO',
+                  exp=r['expansions'] if r['expansions'] is not None else '—',
+                  sec=r['elapsed_s'] if r['elapsed_s'] is not None else '—',
+                  steps=r['proof_steps'] if r['proof_steps'] is not None else '—',
+                  qp=r['quotient_prunes_reported'], bh=r['bank_retrievals_reported']))
+          lines += ['', '## Sixth condition: parallel presentation portfolio', '']
+          if portfolio:
+              lines.append('Verified: **YES**. First internal finisher: **%s**, %.1f s, %s expansions.' %
+                           (portfolio['arm'], portfolio['elapsed_s'], portfolio['expansions']))
+          else:
+              lines.append('Verified: **NO** under the declared 60,000-expansion budget per arm.')
+          lines += ['', 'The portfolio figure is the minimum internal search time among the five arms, matching the ideal parallel-presentation interpretation (independent workers; negligible coordination).']
+          pathlib.Path('preq12b_trading_qh_001_summary.md').write_text('\n'.join(lines) + '\n')
+          print('\n'.join(lines))
+          PY
+
+      - name: Upload portfolio summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: preq12b-trading-qh-001-summary-${{ github.run_id }}
+          path: |
+            preq12b_trading_qh_001_summary.json
+            preq12b_trading_qh_001_summary.md
