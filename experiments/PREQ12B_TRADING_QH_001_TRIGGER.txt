@@ -1,0 +1,5 @@
+Experiment: preq12b Trading / Quotient Hunter / BANK ablation 001
+Target: preq12b
+Seed: 2301
+Budget: 60000 expansions per arm
+Triggered: 2026-08-31
