@@ -1,0 +1,9 @@
+Experiment: PREQR2 Trading-Theorem experiment 001
+Target: preqr2
+Primary trade: verified prcom macro
+Fixed common support: preqr1
+Arms: baseline, trading, qh, trading_qh, trading_qh_bank
+Seed: 2301
+Budget: 60000 expansions per arm
+Verifier: unchanged full frozen Metamath environment
+Date: 2026-08-31
