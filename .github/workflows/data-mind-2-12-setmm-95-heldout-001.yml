@@ -21,6 +21,7 @@ env:
   SPLIT_SEED: '271828'
   HOLDOUT_FRACTION: '0.05'
   TARGET_SECONDS: ${{ github.event_name == 'workflow_dispatch' && inputs.target_seconds || '1800' }}
+  PYTHONPATH: .
 
 jobs:
   setmm-heldout:
