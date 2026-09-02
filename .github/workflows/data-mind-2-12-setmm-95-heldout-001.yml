@@ -1,0 +1,120 @@
+name: DATA MIND 2.12 — set.mm 95/5 held-out 001
+
+on:
+  push:
+    branches: [experiment/data-mind-2.12-setmm-95-heldout-001]
+    paths:
+      - '.github/workflows/data-mind-2-12-setmm-95-heldout-001.yml'
+      - 'experiments/data_mind_2_12_setmm_holdout.py'
+      - 'tests/test_dm212_setmm_holdout.py'
+      - 'metamath.py'
+  workflow_dispatch:
+    inputs:
+      target_seconds:
+        description: 'Held-out proof-search budget in seconds'
+        required: false
+        default: '1800'
+        type: string
+
+env:
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SPLIT_SEED: '271828'
+  HOLDOUT_FRACTION: '0.05'
+  TARGET_SECONDS: ${{ github.event_name == 'workflow_dispatch' && inputs.target_seconds || '1800' }}
+
+jobs:
+  setmm-heldout:
+    name: dm212-setmm-95-heldout-001
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify controller and Metamath verifier self-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile experiments/data_mind_2_12_setmm_holdout.py metamath.py
+          python -m unittest tests.test_dm212_setmm_holdout -v
+          python metamath.py selftest
+
+      - name: Fetch pinned set.mm snapshot from GitHub
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            --output set.mm "$URL"
+          test -s set.mm
+          sha256sum set.mm | tee setmm.sha256
+          wc -c set.mm
+
+      - name: Independent verifier preflight on pinned corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          python metamath.py verify set.mm --limit 2000 --progress 1000
+
+      - name: Run DATA MIND 2.12 dependency-safe 95/5 held-out examination
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results/setmm95
+          python -u experiments/data_mind_2_12_setmm_holdout.py \
+            --setmm set.mm \
+            --source-commit "$SETMM_COMMIT" \
+            --seed "$SPLIT_SEED" \
+            --holdout-fraction "$HOLDOUT_FRACTION" \
+            --seconds "$TARGET_SECONDS" \
+            --out results/setmm95 \
+            2>&1 | tee results/setmm95/run.log
+
+      - name: Publish experiment summary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          print('# DATA MIND 2.12 — set.mm 95/5 held-out 001')
+          p=Path('results/setmm95/result.json')
+          m=Path('results/setmm95/split_manifest.json')
+          if m.exists():
+              x=json.loads(m.read_text())
+              print(f"\n- Frozen source commit: `{x.get('source_commit')}`")
+              print(f"- Complete theorem population: `{x.get('complete_theorem_count')}`")
+              print(f"- Training / holdout: `{x.get('training_count')} / {x.get('holdout_count')}`")
+              print(f"- Actual training fraction: `{x.get('actual_training_fraction')}`")
+              print(f"- Target: **`{x.get('target')}`**")
+              print(f"- Dependency leakage detected: `{x.get('training_proof_mentions_holdout')}`")
+          if not p.exists():
+              print('\nNo result JSON was produced; this is an infrastructure/controller failure, not mathematical non-settlement.')
+          else:
+              r=json.loads(p.read_text())
+              print(f"\n- Status: **{r.get('status')}**")
+              print(f"- Fresh verifier gate: **{r.get('fresh_verifier_gate_passed')}**")
+              print(f"- Candidate proof steps: `{r.get('candidate_proof_steps')}`")
+              print(f"- Search elapsed seconds: `{r.get('search_elapsed_seconds')}`")
+              print(f"- Failure trajectories BANKed: `{r.get('failure_trajectory_count')}`")
+              print(f"- Breadcrumb chain verified: `{r.get('breadcrumb_chain_verified')}`")
+              for i,a in enumerate(r.get('attempts', []),1):
+                  print(f"- Attempt {i}: `{a.get('strategy')}` depth=`{a.get('depth')}` top_k=`{a.get('top_k')}` proof=`{a.get('proof_found')}` elapsed=`{a.get('elapsed_seconds')}`")
+          PY
+
+      - name: Upload complete experiment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm212-setmm95-${{ github.run_id }}
+          path: |
+            results/setmm95/
+            setmm.sha256
+          if-no-files-found: warn
+          retention-days: 90
