@@ -132,8 +132,6 @@ def reconstruct_and_verify(mm: mmcore.MM, lock: Mapping[str, Any]) -> FrozenSpli
     if len(training) != int(lock["training_count"]):
         raise RuntimeError("training count mismatch")
 
-    # Strong dependency-leakage audit: by construction held-out labels are
-    # reverse-citation leaves, but verify it again rather than trusting prose.
     for lab in training:
         leak = next((step for step in dec[lab] if step in holdout_set), None)
         if leak is not None:
@@ -174,8 +172,6 @@ def reconstruct_and_verify(mm: mmcore.MM, lock: Mapping[str, Any]) -> FrozenSpli
     if sha256_text("\n".join(selected) + "\n") != lock["targets_sha256"]:
         raise RuntimeError("target label hash mismatch")
 
-    # Verify statement/proof hashes during the isolated benchmark/training
-    # process.  Hidden proof bytes are not emitted in the learner artifact.
     for row in expected_targets:
         label = str(row["label"])
         statement_text = " ".join(assertion_statement(mm, label)) + "\n"
@@ -197,21 +193,34 @@ def train_count_priors(
     training: Sequence[str],
     dec: Mapping[str, Sequence[str]],
 ) -> dict[str, Any]:
-    """Train the explicitly named legacy count-prior learner backend."""
+    """Train the explicitly named legacy count-prior learner backend.
+
+    Every one of the 45,410 frozen training theorem labels is inspected.  A
+    theorem whose decompressed proof contains no $a/$p assertion step has no
+    event that this particular assertion-prior learner can count; those cases
+    are reported explicitly rather than silently disappearing from the total.
+    """
 
     final_counts: Counter[str] = Counter()
     premise_counts: Counter[str] = Counter()
     token_final: dict[str, Counter[str]] = defaultdict(Counter)
-    trained = 0
+    used = 0
     step_total = 0
+    skipped: list[dict[str, Any]] = []
     for lab in training:
         steps = list(dec[lab])
         if not steps:
+            skipped.append({"label": lab, "reason": "empty_decompressed_proof"})
             continue
         assertion_steps = [
             s for s in steps if mm.labels.get(s, (None,))[0] in ("$a", "$p")
         ]
         if not assertion_steps:
+            skipped.append({
+                "label": lab,
+                "reason": "no_assertion_step_for_count_prior_backend",
+                "decompressed_step_count": len(steps),
+            })
             continue
         final = assertion_steps[-1]
         final_counts[final] += 1
@@ -220,13 +229,16 @@ def train_count_priors(
         for token in set(stat):
             if token in mm.constants:
                 token_final[token][final] += 1
-        trained += 1
+        used += 1
         step_total += len(steps)
 
     return {
         "learner_backend": LEARNER_BACKEND,
-        "trained_theorems": trained,
-        "training_steps_processed": step_total,
+        "training_examples_seen": len(training),
+        "training_examples_with_learnable_assertion_event": used,
+        "training_examples_without_learnable_assertion_event": len(skipped),
+        "skipped_training_examples": skipped,
+        "training_steps_processed_for_used_examples": step_total,
         "final_counts": dict(final_counts),
         "premise_counts": dict(premise_counts),
         "token_final": {token: dict(counts) for token, counts in token_final.items()},
