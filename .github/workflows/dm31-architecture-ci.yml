@@ -9,6 +9,7 @@ on:
       - 'data_mind_3/control/**'
       - 'data_mind_3/tests/**'
       - 'experiments/dm31_architecture_preflight.py'
+      - 'experiments/dm31_settle_frozen20_target.py'
       - 'benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json'
   workflow_dispatch:
 
@@ -36,7 +37,8 @@ jobs:
             data_mind_3/control/couples.py \
             data_mind_3/control/professor_geometry.py \
             data_mind_3/control/transaction_geometry.py \
-            experiments/dm31_architecture_preflight.py
+            experiments/dm31_architecture_preflight.py \
+            experiments/dm31_settle_frozen20_target.py
 
       - name: Run exact architecture unit tests
         run: |
@@ -45,6 +47,7 @@ jobs:
             data_mind_3.tests.test_professor_geometry \
             data_mind_3.tests.test_couples \
             data_mind_3.tests.test_transaction_geometry \
+            data_mind_3.tests.test_settlement_launcher \
             -v 2>&1 | tee architecture_unit_tests.log
 
       - name: Report current implementation status
@@ -79,6 +82,7 @@ jobs:
             data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md
             data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.sha256.txt
             data_mind_3/spec/IMPLEMENTATION_STATUS_001.json
+            data_mind_3/spec/RUNTIME_CONFIG_001.json
             benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
           if-no-files-found: error
           retention-days: 90
