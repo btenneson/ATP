@@ -7,6 +7,10 @@ from pathlib import Path
 
 from data_mind_3.control.controller import AdaptiveCreativityController
 from data_mind_3.control.experience import load_experience, save_experience
+from data_mind_3.control.reflective import (
+    PROFESSOR_SCALARIZATION,
+    ReflectiveP1Controller,
+)
 from data_mind_3.metamath.parser import parse_database
 from data_mind_3.metamath.search import SearchConfig, search_target
 from data_mind_3.metamath.verifier import verify_with_brian_metamath
@@ -36,6 +40,8 @@ def main() -> int:
                     help="enable DATA MIND 3.1 error-driven 11D creativity control")
     ap.add_argument("--child-knob-play", action="store_true",
                     help="let the child run reversible fine-tune and rare group-inverse trials over creativity knobs")
+    ap.add_argument("--reflective-p1", action="store_true",
+                    help="run Professor-facing operationally self-aware P1; implies adaptive control and child play")
     ap.add_argument("--control-interval", type=int, default=16)
     ap.add_argument("--experience-in", type=Path, default=None,
                     help="optional prior DATA MIND 3.1 control JSONL used to warm-start creativity")
@@ -43,7 +49,10 @@ def main() -> int:
                     help="write DATA MIND 3.1 control updates as portable experience JSONL")
     args = ap.parse_args()
 
-    if args.child_knob_play:
+    if args.reflective_p1:
+        args.adaptive_control = True
+        args.child_knob_play = True
+    elif args.child_knob_play:
         args.adaptive_control = True
 
     db = parse_database(args.database)
@@ -70,14 +79,22 @@ def main() -> int:
         return vr.accepted, meta
 
     experience_rows = load_experience(args.experience_in) if args.adaptive_control else []
-    controller = (
-        AdaptiveCreativityController(
+    controller: AdaptiveCreativityController | None
+    if args.reflective_p1:
+        controller = ReflectiveP1Controller(
+            interval=args.control_interval,
+            experience=experience_rows,
+            child_play=True,
+        )
+    elif args.adaptive_control:
+        controller = AdaptiveCreativityController(
             interval=args.control_interval,
             experience=experience_rows,
             child_play=args.child_knob_play,
         )
-        if args.adaptive_control else None
-    )
+    else:
+        controller = None
+
     result = search_target(db, args.label, config, verifier_callback, controller=controller)
     if controller is not None:
         save_experience(args.experience_out, controller.history)
@@ -101,6 +118,7 @@ def main() -> int:
         if row.get("action") == "knob_trial_result" and row.get("decision") == "rollback"
     )
 
+    reflective = controller if isinstance(controller, ReflectiveP1Controller) else None
     payload = {
         "experiment": "DATA MIND 3.1 adaptive Metamath adapter" if controller else "DATA MIND 3 Metamath generalized adapter",
         "target": args.label,
@@ -127,6 +145,20 @@ def main() -> int:
             "child_inverse_trials": inverse_trials,
             "child_kept_trials": kept_trials,
             "child_rolled_back_trials": rolled_back_trials,
+        },
+        "reflective_p1": {
+            "enabled": reflective is not None,
+            "agent": "P1" if reflective is not None else None,
+            "professor_facing": True if reflective is not None else None,
+            "self_aware": True if reflective is not None else None,
+            "professor_updates": reflective.professor_updates if reflective is not None else 0,
+            "self_awareness_updates": reflective.self_awareness_updates if reflective is not None else 0,
+            "repair_half_distance": reflective.repair_half_distance if reflective is not None else None,
+            "last_professor_credit": reflective.last_professor_credit if reflective is not None else None,
+            "professor_scalarization": dict(PROFESSOR_SCALARIZATION) if reflective is not None else None,
+            "repair_horizon_semantics": "H_hat=max(0,1/q_raw-1); burden proxy, not exact transaction-geometric repair distance" if reflective is not None else None,
+            "partial_credit_semantics": "locally checked structural proxy; not terminal verifier acceptance" if reflective is not None else None,
+            "child_relationship": "advisory creativity under P1; Child does not own scheduling" if reflective is not None else None,
         },
     }
     args.result.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
