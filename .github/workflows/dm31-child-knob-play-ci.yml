@@ -1,3 +1,4 @@
+# Trigger commit only; no scientific parameters changed.
 name: DATA MIND 3.1 child knob-play CI
 
 on:
