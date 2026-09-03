@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
+from .child import ChildKnobPlayer
 from .error import ErrorVector, objective
 from .knobs import CreativityVector
 
@@ -17,6 +18,7 @@ class ControlSnapshot:
     previous_objective: float | None
     generated_per_expansion: float
     effective: dict[str, int | float]
+    child_events: tuple[dict[str, object], ...] = field(default_factory=tuple)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -30,15 +32,16 @@ class ControlSnapshot:
             "previous_objective": self.previous_objective,
             "generated_per_expansion": self.generated_per_expansion,
             "effective": self.effective,
+            "child_events": list(self.child_events),
         }
 
 
 class AdaptiveCreativityController:
     """Transparent bounded feedback for DATA MIND 3.1.
 
-    This is deliberately not a black-box optimizer.  It changes the 11D
-    creativity vector in small deterministic steps in response to observable
-    search error.  The resulting vector maps to low-level search controls.
+    The ordinary controller performs small deterministic adjustments.  Optional
+    child play adds reversible micro-experiments over the 11D creativity vector.
+    A rare extreme move can apply a centered group inverse to one coordinate.
     Nothing here can certify a proof.
     """
 
@@ -48,6 +51,7 @@ class AdaptiveCreativityController:
         *,
         interval: int = 16,
         experience: Iterable[dict[str, object]] = (),
+        child_play: bool = False,
     ) -> None:
         self.interval = max(4, int(interval))
         self.creativity = initial or CreativityVector()
@@ -55,6 +59,7 @@ class AdaptiveCreativityController:
             after = row.get("creativity_after") if isinstance(row, dict) else None
             if isinstance(after, dict):
                 self.creativity = CreativityVector.from_dict(after)
+        self.child = ChildKnobPlayer(interval=self.interval) if child_play else None
         self._last_update_expansion = 0
         self._last_generated = 0
         self._previous_objective: float | None = None
@@ -63,6 +68,10 @@ class AdaptiveCreativityController:
         self._recent_relevance_sum = 0.0
         self._recent_relevance_n = 0
         self.history: list[dict[str, object]] = []
+
+    @property
+    def child_play_enabled(self) -> bool:
+        return self.child is not None
 
     @staticmethod
     def relevance(statement: tuple[str, ...], target: tuple[str, ...]) -> float:
@@ -123,8 +132,6 @@ class AdaptiveCreativityController:
             "free_var_completion_cap": scaled(int(getattr(base, "free_var_completion_cap")), completion_factor, 2),
             "max_depth": scaled(int(getattr(base, "max_depth")), depth_factor, 4),
             "term_limit": scaled(16, term_factor, 4),
-            # 3.0 does one cheap definition update per term request.  Keep that
-            # exact behavior at creativity=0.5; abstraction can move it 0..2.
             "definition_rounds": max(0, min(2, int(round(1.0 + 2.0 * (c.abstraction_level - 0.5))))),
             "lemma_direction": c.lemma_direction,
             "heuristic_weighting": c.heuristic_weighting,
@@ -147,7 +154,6 @@ class AdaptiveCreativityController:
         drift_penalty = 6.0 * (1.0 - c.divergence) * (1.0 - relevance)
         depth_penalty = 0.025 * depth * (1.0 - c.search_depth)
         guided = base + target_bonus - drift_penalty - depth_penalty
-        # node_selection=0 preserves the old score; 1 fully uses guided ranking.
         return (1.0 - c.node_selection) * base + c.node_selection * guided
 
     def observe_expansion(
@@ -191,8 +197,19 @@ class AdaptiveCreativityController:
         j = objective(e)
         before = self.creativity
         deltas: dict[str, float] = {}
+        child_events: list[dict[str, object]] = []
 
-        pressure = max(e.branch, e.frontier)
+        # In ordinary 3.1 mode, absolute frontier occupancy participates in the
+        # feedback pressure exactly as before.  In child-play mode, a historical
+        # backlog is not allowed to pin creativity forever: recent branching is
+        # the normal safety signal, with frontier becoming an emergency only
+        # above 85% occupancy.
+        if self.child is None:
+            pressure = max(e.branch, e.frontier)
+        else:
+            emergency_frontier = max(0.0, min(1.0, (e.frontier - 0.85) / 0.15))
+            pressure = max(e.branch, emergency_frontier)
+
         if pressure > 0.20:
             deltas.update({
                 "search_breadth": deltas.get("search_breadth", 0.0) - 0.12 * pressure,
@@ -214,9 +231,10 @@ class AdaptiveCreativityController:
                 "node_selection": deltas.get("node_selection", 0.0) + 0.04 * e.drift,
             })
 
-        # If the search is not under branching pressure but has stopped improving,
-        # deliberately loosen creativity rather than collapsing into a narrow beam.
-        if e.stagnation > 0.60 and pressure < 0.40:
+        # Ordinary controller loosening remains available when child play is
+        # disabled.  With child play enabled, deliberate reversible trials own
+        # the stagnation response instead of a one-way drift in knob values.
+        if self.child is None and e.stagnation > 0.60 and pressure < 0.40:
             deltas.update({
                 "search_breadth": deltas.get("search_breadth", 0.0) + 0.06 * e.stagnation,
                 "divergence": deltas.get("divergence", 0.0) + 0.07 * e.stagnation,
@@ -225,9 +243,34 @@ class AdaptiveCreativityController:
                 "lemma_direction": deltas.get("lemma_direction", 0.0) - 0.03 * e.stagnation,
             })
 
-        # Bound every individual move even if several error terms vote together.
         bounded = {k: max(-0.12, min(0.12, v)) for k, v in deltas.items()}
         self.creativity = self.creativity.moved(**bounded)
+
+        if self.child is not None:
+            play_loss = self.child.play_loss(partial_credit=partial_credit, error=e)
+            self.creativity, finish_event = self.child.maybe_finish(
+                expansion=expansion,
+                creativity=self.creativity,
+                loss=play_loss,
+            )
+            if finish_event is not None:
+                child_events.append(finish_event)
+                self.history.append(finish_event)
+
+            # Do not start playful exploration while an active safety correction
+            # is required.  Once branching is controlled, the child may test a
+            # new local move even if an old frontier backlog remains large.
+            if pressure <= 0.20:
+                self.creativity, start_event = self.child.maybe_start(
+                    expansion=expansion,
+                    creativity=self.creativity,
+                    loss=play_loss,
+                    error=e,
+                )
+                if start_event is not None:
+                    child_events.append(start_event)
+                    self.history.append(start_event)
+
         effective = self.effective(base_config)
         snap = ControlSnapshot(
             expansion=expansion,
@@ -238,6 +281,7 @@ class AdaptiveCreativityController:
             previous_objective=self._previous_objective,
             generated_per_expansion=branch_rate,
             effective=effective,
+            child_events=tuple(child_events),
         ).to_dict()
         self.history.append(snap)
 
