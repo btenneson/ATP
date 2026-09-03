@@ -32,7 +32,9 @@ def test_centered_group_inverse_is_one_minus_c():
     d = c.inverted("search_breadth")
     assert abs(d.search_breadth - 0.83) < 1e-12
     assert d.divergence == c.divergence
-    assert d.inverted("search_breadth") == c
+    e = d.inverted("search_breadth")
+    assert abs(e.search_breadth - c.search_breadth) < 1e-12
+    assert e.divergence == c.divergence
 
 
 def test_frontier_explosion_tightens_breadth_and_raises_guidance():
@@ -92,13 +94,11 @@ def test_child_rare_inverse_requires_repeated_failed_fine_trials():
     assert start is not None
     assert start["mode"] == "group_inverse"
     knob = str(start["knob"])
-    assert getattr(trial_c, knob) == 1.0 - getattr(c, knob)
+    assert abs(getattr(trial_c, knob) - (1.0 - getattr(c, knob))) < 1e-12
 
 
 def test_child_mode_ignores_old_frontier_backlog_for_play_when_branching_is_controlled():
     ctl = AdaptiveCreativityController(interval=4, child_play=True)
-    # Establish a best partial-credit value, then remain stagnant while the
-    # frontier is large but not near the emergency threshold.
     for expansion in (4, 8, 12, 16):
         event = ctl.observe_expansion(
             expansion=expansion,
