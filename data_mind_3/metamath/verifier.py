@@ -47,7 +47,11 @@ def verify_with_brian_metamath(
             timeout=timeout_s,
         )
     combined = proc.stdout + "\n" + proc.stderr
-    accepted = proc.returncode == 0 and "No errors" in combined
+    verified_match = re.search(r"verified\s+([0-9,]+)", combined)
+    failed_match = re.search(r"FAILED\s+([0-9,]+)", combined)
+    verified_count = int(verified_match.group(1).replace(",", "")) if verified_match else 0
+    failed_count = int(failed_match.group(1).replace(",", "")) if failed_match else -1
+    accepted = proc.returncode == 0 and verified_count > 0 and failed_count == 0
     return VerificationResult(
         accepted,
         proc.returncode,
