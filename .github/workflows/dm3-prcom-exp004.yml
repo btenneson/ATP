@@ -1,0 +1,112 @@
+name: DATA MIND 3 Experiment 004 PRCOM
+
+on:
+  push:
+    branches: [dm3-prcom-exp004]
+    paths:
+      - '.github/workflows/dm3-prcom-exp004.yml'
+      - 'data_mind_3/**'
+      - 'run_dm3_metamath_target.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prcom-cold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out isolated experiment branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test runtime
+        run: python -m pip install --quiet pytest
+
+      - name: Unit-test fresh generalized bridge
+        run: PYTHONPATH=. pytest -q data_mind_3/tests/test_metamath_adapter.py
+
+      - name: Verify tiny calibration through the independent verifier boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python -u run_dm3_metamath_target.py data_mind_3/tests/mini.mm \
+            --label th --verifier metamath.py --candidate-cap 8 --max-expansions 20 \
+            --max-depth 8 --max-open 8 --timeout 30 \
+            --result dm3_mini_result.json --historian dm3_mini_historian.jsonl
+
+      - name: Download exact frozen historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 --fail -o frozen_set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum frozen_set.mm | awk '{print $1}')" = \
+            "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Record immutable preflight manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "repo=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "branch=${GITHUB_REF_NAME}"
+            echo "target=prcom"
+            echo "setmm_commit=cd577894d8e6bf8b4fe8014c0d525d531507e4b7"
+            echo "setmm_sha256=$(sha256sum frozen_set.mm | awk '{print $1}')"
+            echo "parser_sha256=$(sha256sum data_mind_3/metamath/parser.py | awk '{print $1}')"
+            echo "matcher_sha256=$(sha256sum data_mind_3/metamath/matcher.py | awk '{print $1}')"
+            echo "search_sha256=$(sha256sum data_mind_3/metamath/search.py | awk '{print $1}')"
+            echo "verifier_adapter_sha256=$(sha256sum data_mind_3/metamath/verifier.py | awk '{print $1}')"
+            echo "external_verifier_sha256=$(sha256sum metamath.py | awk '{print $1}')"
+            echo "candidate_cap=64"
+            echo "max_expansions=20000"
+            echo "max_depth=24"
+            echo "max_open=24"
+            echo "timeout_s=1800"
+            echo "expansion_definition=one nonterminal state popped and actually successor-expanded"
+          } | tee dm3_prcom_exp004_manifest.txt
+
+      - name: Run frozen cold PRCOM search
+        id: prcom
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          /usr/bin/time -f 'wall_seconds=%e\nmax_rss_kb=%M' -o dm3_prcom_exp004.time \
+          env PYTHONPATH=. python -u run_dm3_metamath_target.py frozen_set.mm \
+            --label prcom --verifier metamath.py \
+            --candidate-cap 64 --max-expansions 20000 --max-depth 24 --max-open 24 \
+            --timeout 1800 \
+            --result dm3_prcom_exp004_result.json \
+            --historian dm3_prcom_exp004_historian.jsonl \
+            2>&1 | tee dm3_prcom_exp004.log
+          RC=${PIPESTATUS[0]}
+          echo "runner_rc=${RC}" | tee dm3_prcom_exp004.run.txt
+          cat dm3_prcom_exp004.time | tee -a dm3_prcom_exp004.run.txt
+          # UNKNOWN is a scientifically valid bounded outcome; preserve artifacts.
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then exit "$RC"; fi
+          exit 0
+
+      - name: Upload Experiment 004 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-mind-3-prcom-exp004-${{ github.run_id }}
+          path: |
+            data_mind_3/experiments/EXPERIMENT_004_PRCOM_FREEZE.md
+            dm3_mini_result.json
+            dm3_mini_historian.jsonl
+            dm3_prcom_exp004_manifest.txt
+            dm3_prcom_exp004_result.json
+            dm3_prcom_exp004_historian.jsonl
+            dm3_prcom_exp004.log
+            dm3_prcom_exp004.time
+            dm3_prcom_exp004.run.txt
+          if-no-files-found: warn
