@@ -1,4 +1,4 @@
-# Architecture/interface CI only. This is not a scientific experiment and changes no experiment number.
+# Architecture/runtime CI only. This is not a scientific experiment and changes no experiment number.
 name: DATA MIND 3.1 Professor/reflection interface CI
 
 on:
@@ -8,8 +8,10 @@ on:
       - 'data_mind_3/ARCHITECTURE_CONTRACT.md'
       - 'data_mind_3/control/**'
       - 'data_mind_3/tests/test_professor_reflective_interfaces.py'
+      - 'data_mind_3/tests/test_reflective_p1_runtime.py'
       - 'data_mind_3/tests/test_adaptive_control.py'
       - 'data_mind_3/tests/test_metamath_adapter.py'
+      - 'run_dm3_metamath_target.py'
       - '.github/workflows/dm31-professor-reflective-agents-ci.yml'
 
 permissions:
@@ -24,9 +26,30 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install --quiet pytest
-      - name: Test existing 3.1 behavior plus Professor/reflection/FUTUREBANK interfaces
+      - name: Test existing 3.1 behavior plus Professor/reflection/FUTUREBANK runtime
         run: |
           PYTHONPATH=. pytest -q \
             data_mind_3/tests/test_adaptive_control.py \
             data_mind_3/tests/test_metamath_adapter.py \
-            data_mind_3/tests/test_professor_reflective_interfaces.py
+            data_mind_3/tests/test_professor_reflective_interfaces.py \
+            data_mind_3/tests/test_reflective_p1_runtime.py
+
+      - name: Run reflective P1 through the generic Metamath bridge and independent verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python -u run_dm3_metamath_target.py data_mind_3/tests/mini.mm \
+            --label th --verifier metamath.py --candidate-cap 8 --max-expansions 20 \
+            --max-depth 8 --max-open 8 --timeout 30 --reflective-p1 --control-interval 4 \
+            --result dm31_reflective_p1_mini_result.json \
+            --historian dm31_reflective_p1_mini_historian.jsonl \
+            --experience-out dm31_reflective_p1_mini_experience.jsonl
+          python - <<'PY'
+          import json
+          r=json.load(open('dm31_reflective_p1_mini_result.json',encoding='utf-8'))
+          assert r['status']=='PROVED', r
+          assert r['verification']['accepted'] is True, r
+          assert r['reflective_p1']['enabled'] is True, r
+          assert r['reflective_p1']['agent']=='P1', r
+          print('reflective P1 mini bridge verified')
+          PY
