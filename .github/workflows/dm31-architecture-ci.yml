@@ -1,0 +1,84 @@
+name: DATA MIND 3.1 architecture CI
+
+on:
+  push:
+    branches: [dm31-frozen20-training-settlement-dev]
+    paths:
+      - '.github/workflows/dm31-architecture-ci.yml'
+      - 'data_mind_3/spec/**'
+      - 'data_mind_3/control/**'
+      - 'data_mind_3/tests/**'
+      - 'experiments/dm31_architecture_preflight.py'
+      - 'benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+
+jobs:
+  architecture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile architecture modules
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            data_mind_3/control/agents.py \
+            data_mind_3/control/couples.py \
+            data_mind_3/control/professor_geometry.py \
+            data_mind_3/control/transaction_geometry.py \
+            experiments/dm31_architecture_preflight.py
+
+      - name: Run exact architecture unit tests
+        run: |
+          set -euo pipefail
+          python -m unittest \
+            data_mind_3.tests.test_professor_geometry \
+            data_mind_3.tests.test_couples \
+            data_mind_3.tests.test_transaction_geometry \
+            -v 2>&1 | tee architecture_unit_tests.log
+
+      - name: Report current implementation status
+        run: |
+          set -euo pipefail
+          python experiments/dm31_architecture_preflight.py --mode report \
+            | tee architecture_preflight_report.json
+
+      - name: Require official guard to remain closed until live integration is complete
+        run: |
+          set +e
+          python experiments/dm31_architecture_preflight.py --mode official \
+            > official_preflight_expected_abort.log 2>&1
+          rc=$?
+          cat official_preflight_expected_abort.log
+          if [ "$rc" -ne 2 ]; then
+            echo "Official gate unexpectedly opened or failed incorrectly: rc=$rc" >&2
+            exit 1
+          fi
+          grep -q 'OFFICIAL DATA MIND 3.1 RUN ABORTED' official_preflight_expected_abort.log
+          exit 0
+
+      - name: Upload architecture evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-architecture-ci-${{ github.run_id }}
+          path: |
+            architecture_unit_tests.log
+            architecture_preflight_report.json
+            official_preflight_expected_abort.log
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.sha256.txt
+            data_mind_3/spec/IMPLEMENTATION_STATUS_001.json
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          if-no-files-found: error
+          retention-days: 90
