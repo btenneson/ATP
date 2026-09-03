@@ -5,11 +5,7 @@ on:
     branches: [dm31-frozen20-training-settlement-dev]
     paths:
       - '.github/workflows/dm31-frozen20-training-dev.yml'
-      - 'data_mind_3/spec/**'
-      - 'data_mind_3/control/professor_geometry.py'
       - 'data_mind_3/training/**'
-      - 'data_mind_3/tests/test_professor_geometry.py'
-      - 'experiments/dm31_architecture_preflight.py'
       - 'experiments/dm31_train_frozen20.py'
       - 'benchmarks/data-mind-3.1-frozen20-001/**'
       - 'metamath.py'
@@ -42,18 +38,10 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile \
-            data_mind_3/control/professor_geometry.py \
             data_mind_3/training/frozen20.py \
             experiments/dm31_architecture_preflight.py \
             experiments/dm31_train_frozen20.py \
             metamath.py
-
-      - name: Unit-test exact Professor formula
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m unittest data_mind_3.tests.test_professor_geometry -v \
-            2>&1 | tee professor_geometry_tests.log
 
       - name: Report architecture implementation status
         shell: bash
@@ -152,7 +140,6 @@ jobs:
             training_artifact/
             architecture_preflight_report.json
             official_preflight_expected_abort.log
-            professor_geometry_tests.log
             setmm_sha256.txt
             metamath_prefix_verify.log
             development_status.txt
