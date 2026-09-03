@@ -8,7 +8,10 @@ from pathlib import Path
 
 from data_mind_3.control.agents import DEFAULT_AGENT_PROFILES
 
-PASSING = {"IMPLEMENTED", "UNIT-TESTED", "INTEGRATION-TESTED", "EXERCISED IN RUN", "VERIFIED"}
+# An official run is not allowed merely because a class/function exists or a
+# unit test passes.  Required architecture must have already passed a runtime
+# integration test demonstrating that the component is actually wired.
+OFFICIAL_READY = {"INTEGRATION-TESTED", "EXERCISED IN RUN", "VERIFIED"}
 REQUIRED_OFFICIAL = (
     "eight_agent_profiles",
     "four_couples_live_runtime",
@@ -96,8 +99,10 @@ def main() -> int:
         if row is None:
             blockers.append(f"missing implementation-status row: {key}")
             continue
-        if row.get("status") not in PASSING:
-            blockers.append(f"{key}: {row.get('status')}" + (f" — {row.get('reason')}" if row.get("reason") else ""))
+        component_status = row.get("status")
+        if component_status not in OFFICIAL_READY:
+            detail = row.get("reason") or row.get("evidence") or "not integration-tested in live runtime"
+            blockers.append(f"{key}: {component_status} — {detail}")
 
     unresolved = list(status.get("unresolved_from_snapshot", ()))
     for item in unresolved:
@@ -105,6 +110,7 @@ def main() -> int:
 
     report = {
         "mode": args.mode,
+        "official_ready_statuses": sorted(OFFICIAL_READY),
         "architecture_snapshot_sha256": actual_hash,
         "benchmark_name": lock.get("benchmark_name"),
         "training_count": lock.get("training_count"),
@@ -117,7 +123,7 @@ def main() -> int:
     print(json.dumps(report, indent=2, sort_keys=True))
 
     if args.mode == "official" and blockers:
-        print("OFFICIAL DATA MIND 3.1 RUN ABORTED: architecture is not exact/complete.")
+        print("OFFICIAL DATA MIND 3.1 RUN ABORTED: architecture is not exact/complete/live-wired.")
         return 2
     return 0
 
