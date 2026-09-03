@@ -1,0 +1,101 @@
+name: DATA-MIND 2.13 integrated Frozen-20 Benchmark 001
+
+on:
+  push:
+    branches: [experiment/data-mind-2.13-frozen20-001]
+    paths:
+      - '.github/workflows/data-mind-2.13-frozen20-integrated-001.yml'
+      - 'experiments/data_mind_2_13_integrated.py'
+      - 'experiments/data_mind_2_12_setmm_holdout.py'
+      - 'experiments/run_dm212_setmm_target_ordinal.py'
+      - 'experiments/build_frozen20_manifest.py'
+      - 'tests/test_dm213_integrated.py'
+      - 'benchmarks/data-mind-setmm-frozen20-001/**'
+      - 'metamath.py'
+  workflow_dispatch:
+
+env:
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SPLIT_SEED: '271828'
+  HOLDOUT_FRACTION: '0.05'
+  TARGET_SECONDS: '1800'
+  PYTHONPATH: .
+
+jobs:
+  heldout-target:
+    name: integrated-frozen20-${{ matrix.target_ordinal }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        target_ordinal: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Self-tests
+        run: |
+          set -euo pipefail
+          python -m py_compile experiments/data_mind_2_13_integrated.py experiments/data_mind_2_12_setmm_holdout.py experiments/run_dm212_setmm_target_ordinal.py experiments/build_frozen20_manifest.py metamath.py
+          python -m unittest tests.test_dm212_setmm_holdout tests.test_dm213_integrated -v
+          python metamath.py selftest
+      - name: Fetch and validate frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 --connect-timeout 30 --max-time 300 --output set.mm "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo '19cb1ec229f3f11e36ff439a6381878864d9f2d4906f20fc9401346b309894e3  set.mm' | sha256sum -c -
+          python metamath.py verify set.mm --limit 2000 --progress 1000
+          python experiments/build_frozen20_manifest.py --setmm set.mm --out regenerated-manifest.json
+          cmp regenerated-manifest.json benchmarks/data-mind-setmm-frozen20-001/manifest.json
+      - name: Run integrated held-out target
+        run: |
+          set -euo pipefail
+          OUT="results/frozen20-target-${{ matrix.target_ordinal }}"
+          mkdir -p "$OUT"
+          python -u experiments/data_mind_2_13_integrated.py --target-ordinal "${{ matrix.target_ordinal }}" --setmm set.mm --source-commit "$SETMM_COMMIT" --seed "$SPLIT_SEED" --holdout-fraction "$HOLDOUT_FRACTION" --seconds "$TARGET_SECONDS" --out "$OUT" 2>&1 | tee "$OUT/run.log"
+      - name: Enforce and summarize module evidence
+        run: |
+          python - "results/frozen20-target-${{ matrix.target_ordinal }}" <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          out = Path(sys.argv[1])
+          result = json.loads((out / "result.json").read_text())
+          usage = json.loads((out / "module_usage.json").read_text())
+          if not usage.get("module_use_gate_passed"):
+              raise SystemExit("required live-module gate did not pass")
+          totals = usage["totals"]
+          rows = [
+              "### " + result["target"],
+              "",
+              f"- Status: `{result['status']}`",
+              f"- Fresh verifier: `{result['fresh_verifier_gate_passed']}`",
+              f"- Candidate steps: `{result['candidate_proof_steps']}`",
+              f"- Search elapsed: `{result['search_elapsed_seconds']:.3f}s`",
+              f"- BANK reuse queries/runtime hits: `{totals.get('bank_reuse_queries', 0)}` / `{totals.get('bank_runtime_hits', 0)}`",
+              f"- BANK trades/hits: `{totals.get('bank_trade_queries', 0)}` / `{totals.get('bank_trade_hits', 0)}`",
+              f"- Quotient queries/prunes: `{totals.get('quotient_queries', 0)}` / `{totals.get('quotient_prunes', 0)}`",
+              f"- Proof macro queries/hits: `{totals.get('proof_macro_queries', 0)}` / `{totals.get('proof_macro_hits', 0)}`",
+              f"- Professor scores: `{totals.get('professor_scores', 0)}`",
+              f"- Shortcut queries/hits: `{totals.get('shortcut_queries', 0)}` / `{totals.get('shortcut_hits', 0)}`",
+          ]
+          print("\n".join(rows))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write("\n".join(rows) + "\n")
+          PY
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-mind-2.13-frozen20-target-${{ matrix.target_ordinal }}-${{ github.run_id }}
+          path: |
+            results/frozen20-target-${{ matrix.target_ordinal }}/
+            benchmarks/data-mind-setmm-frozen20-001/manifest.json
+            benchmarks/data-mind-setmm-frozen20-001/data-mind-2.13-integrated-protocol.md
+          if-no-files-found: warn
+          retention-days: 90
