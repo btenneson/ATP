@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Mapping
 
 from .parser import Assertion
 
@@ -17,7 +17,7 @@ class Match:
         return dict(self.substitution)
 
 
-def apply_substitution(statement: Iterable[str], subst: Substitution, variables: set[str]) -> tuple[str, ...]:
+def apply_substitution(statement: Iterable[str], subst: Mapping[str, tuple[str, ...]], variables: set[str]) -> tuple[str, ...]:
     out: list[str] = []
     for tok in statement:
         if tok in variables:
@@ -31,7 +31,7 @@ def apply_substitution(statement: Iterable[str], subst: Substitution, variables:
     return tuple(out)
 
 
-def _min_required(pattern: tuple[str, ...], start: int, variables: set[str], subst: Substitution) -> int:
+def _min_required(pattern: tuple[str, ...], start: int, variables: set[str], subst: Mapping[str, tuple[str, ...]]) -> int:
     total = 0
     for tok in pattern[start:]:
         if tok in variables:
@@ -41,28 +41,29 @@ def _min_required(pattern: tuple[str, ...], start: int, variables: set[str], sub
     return total
 
 
-def match_statement(
-    assertion: Assertion,
+def match_pattern(
+    pattern: tuple[str, ...],
     goal: tuple[str, ...],
-    all_variables: set[str],
+    candidate_variables: set[str] | frozenset[str],
+    type_map: Mapping[str, str] | None = None,
     *,
+    initial: Mapping[str, tuple[str, ...]] | None = None,
     max_matches: int = 8,
-    max_sequence_len: int = 48,
+    max_sequence_len: int = 64,
 ) -> tuple[Match, ...]:
-    """Match an assertion conclusion to a concrete goal by Metamath substitution.
+    """Generic Metamath word-pattern matching.
 
-    This is sequence matching, not theorem-specific parsing. Candidate variables
-    are metavariables; symbols in the goal are data. The later verifier remains
-    the mathematical authority.
+    Only `candidate_variables` are metavariables. The routine is deliberately
+    theorem-label agnostic and can therefore be reused by proof search,
+    definition-guided term proposals, and later presentation-trading modules.
     """
-    pattern = assertion.statement
-    if not pattern or not goal or pattern[0] != goal[0]:
+    if not pattern or not goal:
         return ()
-    candidate_vars = assertion.mandatory_variables
-    type_map = assertion.variable_type_map
     results: list[Match] = []
+    type_map = dict(type_map or {})
+    subst: Substitution = dict(initial or {})
 
-    def rec(pi: int, gi: int, subst: Substitution) -> None:
+    def rec(pi: int, gi: int) -> None:
         if len(results) >= max_matches:
             return
         if pi == len(pattern):
@@ -72,33 +73,53 @@ def match_statement(
         if gi > len(goal):
             return
         tok = pattern[pi]
-        if tok not in candidate_vars:
+        if tok not in candidate_variables:
             if gi < len(goal) and goal[gi] == tok:
-                rec(pi + 1, gi + 1, subst)
+                rec(pi + 1, gi + 1)
             return
 
         if tok in subst:
             seq = subst[tok]
             if goal[gi:gi + len(seq)] == seq:
-                rec(pi + 1, gi + len(seq), subst)
+                rec(pi + 1, gi + len(seq))
             return
 
-        min_after = _min_required(pattern, pi + 1, candidate_vars, subst)
+        min_after = _min_required(pattern, pi + 1, set(candidate_variables), subst)
         max_len = min(max_sequence_len, len(goal) - gi - min_after)
         if max_len < 1:
             return
-        # setvar variables can only be replaced by one symbol. Other sorts are
-        # constrained later by their instantiated floating hypotheses.
         lengths = (1,) if type_map.get(tok) == "setvar" else range(1, max_len + 1)
         for n in lengths:
             seq = goal[gi:gi + n]
             if not seq:
                 continue
             subst[tok] = seq
-            rec(pi + 1, gi + n, subst)
+            rec(pi + 1, gi + n)
             subst.pop(tok, None)
             if len(results) >= max_matches:
                 return
 
-    rec(0, 0, {})
+    rec(0, 0)
     return tuple(results)
+
+
+def match_statement(
+    assertion: Assertion,
+    goal: tuple[str, ...],
+    all_variables: set[str],
+    *,
+    max_matches: int = 8,
+    max_sequence_len: int = 64,
+) -> tuple[Match, ...]:
+    """Match an assertion conclusion to a goal by Metamath substitution."""
+    pattern = assertion.statement
+    if not pattern or not goal or pattern[0] != goal[0]:
+        return ()
+    return match_pattern(
+        pattern,
+        goal,
+        assertion.mandatory_variables,
+        assertion.variable_type_map,
+        max_matches=max_matches,
+        max_sequence_len=max_sequence_len,
+    )
