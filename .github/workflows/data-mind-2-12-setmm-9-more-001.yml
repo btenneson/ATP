@@ -1,0 +1,117 @@
+name: DATA MIND 2.12 — set.mm nine more held-out targets 001
+
+on:
+  push:
+    branches: [experiment/data-mind-2.12-setmm-9-more-001]
+    paths:
+      - '.github/workflows/data-mind-2-12-setmm-9-more-001.yml'
+      - 'experiments/run_dm212_setmm_target_ordinal.py'
+      - 'experiments/data_mind_2_12_setmm_holdout.py'
+      - 'metamath.py'
+  workflow_dispatch:
+
+env:
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SPLIT_SEED: '271828'
+  HOLDOUT_FRACTION: '0.05'
+  TARGET_SECONDS: '1800'
+  PYTHONPATH: .
+
+jobs:
+  heldout-target:
+    name: setmm-heldout-${{ matrix.target_ordinal }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 9
+      matrix:
+        target_ordinal: [5, 6, 7, 8, 9, 10, 11, 12, 13]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Self-tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile experiments/data_mind_2_12_setmm_holdout.py experiments/run_dm212_setmm_target_ordinal.py metamath.py
+          python -m unittest tests.test_dm212_setmm_holdout -v
+          python metamath.py selftest
+
+      - name: Fetch pinned set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            --output set.mm "$URL"
+          test -s set.mm
+          sha256sum set.mm | tee setmm.sha256
+
+      - name: Independent verifier preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python metamath.py verify set.mm --limit 2000 --progress 1000
+
+      - name: Run held-out target
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="results/setmm95-target-${{ matrix.target_ordinal }}"
+          mkdir -p "$OUT"
+          python -u experiments/run_dm212_setmm_target_ordinal.py \
+            --target-ordinal "${{ matrix.target_ordinal }}" \
+            --setmm set.mm \
+            --source-commit "$SETMM_COMMIT" \
+            --seed "$SPLIT_SEED" \
+            --holdout-fraction "$HOLDOUT_FRACTION" \
+            --seconds "$TARGET_SECONDS" \
+            --out "$OUT" \
+            2>&1 | tee "$OUT/run.log"
+
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          OUT="results/setmm95-target-${{ matrix.target_ordinal }}"
+          python - "$OUT" "${{ matrix.target_ordinal }}" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          from pathlib import Path
+          out=Path(sys.argv[1]); ordinal=sys.argv[2]
+          print(f'# DATA MIND 2.12 — held-out target ordinal {ordinal}')
+          m=out/'split_manifest.json'; p=out/'result.json'
+          if m.exists():
+              x=json.loads(m.read_text())
+              print(f"\n- Training / holdout: `{x.get('training_count')} / {x.get('holdout_count')}`")
+              print(f"- Target: **`{x.get('target')}`**")
+              print(f"- Hidden original proof length: `{x.get('target_proof_steps_hidden')}`")
+              print(f"- Leakage: `{x.get('training_proof_mentions_holdout')}`")
+          if p.exists():
+              r=json.loads(p.read_text())
+              print(f"- Status: **{r.get('status')}**")
+              print(f"- Fresh verifier gate: **{r.get('fresh_verifier_gate_passed')}**")
+              print(f"- Candidate proof steps: `{r.get('candidate_proof_steps')}`")
+              print(f"- Search elapsed seconds: `{r.get('search_elapsed_seconds')}`")
+          else:
+              print('- No result JSON: infrastructure/controller failure, not mathematical non-settlement.')
+          PY
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm212-setmm95-target-${{ matrix.target_ordinal }}-${{ github.run_id }}
+          path: |
+            results/setmm95-target-${{ matrix.target_ordinal }}/
+            setmm.sha256
+          if-no-files-found: warn
+          retention-days: 90
