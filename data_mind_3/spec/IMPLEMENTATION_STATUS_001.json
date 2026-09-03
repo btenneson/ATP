@@ -10,9 +10,9 @@
     "subscript1_self_awareness_ci": {"status":"SURROGATE","reason":"current branch exposes a self_aware flag / observation telemetry, not the full operational (c,i) faculty"},
     "subscript2_no_ci": {"status":"IMPLEMENTED","evidence":"member-2 profiles are non-self-aware"},
     "professor_addresses_only_subscript1": {"status":"IMPLEMENTED","evidence":"Professor.may_address uses professor_facing member-1 profiles"},
-    "professor_smooth_partial_credit": {"status":"SURROGATE","reason":"current Professor repair term uses a half-distance form rather than alpha*q_c + (1-alpha)*exp(-H_c/h)"},
+    "professor_smooth_partial_credit": {"status":"IMPLEMENTED","evidence":"data_mind_3/control/professor_geometry.py implements alpha*q_c + (1-alpha)*exp(-H_c/h) without deriving H_c from q_c; tests are written but not yet executed"},
     "transaction_geometry_dc": {"status":"ABSENT","reason":"no exact frozen transaction set R and cost function w computes d_c"},
-    "repair_horizon_Hc": {"status":"ABSENT","reason":"H_c is not computed as infimum of transaction cost to certified completion"},
+    "repair_horizon_Hc": {"status":"ABSENT","reason":"H_c is not yet computed as infimum of transaction cost to certified completion"},
     "P1_engine": {"status":"ABSENT","reason":"proof search exists but is not instantiated as an independent live P1 couple member"},
     "P2_engine": {"status":"ABSENT","reason":"proof search exists but is not instantiated as an independent live P2 couple member"},
     "R1_engine": {"status":"ABSENT"},
@@ -33,7 +33,7 @@
     "Creativity": {"status":"SURROGATE","reason":"creativity-vector controller exists, but not the complete named component/runtime contract"},
     "Dreamer": {"status":"ABSENT"},
     "Regulation": {"status":"ABSENT"},
-    "Learner": {"status":"ABSENT","reason":"no DATA MIND 3.1 frozen learner backend is yet wired to Frozen-20 training"},
+    "Learner": {"status":"SURROGATE","reason":"data_mind_3/training/frozen20.py wires the frozen 95% corpus to explicitly named development backend setmm_count_priors_v1; this backend has not been designated as the canonical 3.1 Learner and is not yet wired to eight-agent runtime"},
     "Horizon": {"status":"ABSENT"},
     "Compiler": {"status":"ABSENT"},
     "Quotient_Hunter": {"status":"ABSENT"},
@@ -42,6 +42,15 @@
     "Quarantine": {"status":"ABSENT"},
     "federated_verified_memory": {"status":"ABSENT"},
     "persistent_logs_replay": {"status":"SURROGATE","reason":"historian telemetry exists but complete eight-agent checkpoint/replay is not wired"}
+  },
+  "training_wiring": {
+    "benchmark_lock": "benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json",
+    "trainer": "data_mind_3/training/frozen20.py",
+    "cli": "experiments/dm31_train_frozen20.py",
+    "learner_backend": "setmm_count_priors_v1",
+    "holdout_proofs_used_for_training": false,
+    "target_exposed_to_training": false,
+    "status": "IMPLEMENTED_NOT_YET_EXECUTED"
   },
   "unresolved_from_snapshot": [
     "X2 strategic-independence contract",
