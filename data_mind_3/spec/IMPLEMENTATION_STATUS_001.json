@@ -50,11 +50,16 @@
     "learner_backend": "setmm_count_priors_v1",
     "holdout_proofs_used_for_training": false,
     "target_exposed_to_training": false,
-    "first_successful_development_training_run": 33802677578,
-    "first_successful_development_training_artifact": 9911687490,
-    "first_successful_development_training_artifact_digest": "sha256:65a5cd6217aa850ae2da40dc2e0a709c9e8d05c310974646d32e87a5b1f57cbc",
-    "note": "trainer reporting was subsequently tightened to expose training examples with no learnable assertion event; a newer training artifact supersedes this for current-code provenance",
-    "status": "DEVELOPMENT_TRAINING_EXECUTED; CURRENT_CODE_RERUN_PENDING"
+    "current_development_training_run": 33803116337,
+    "current_development_training_commit": "c1c2aac6f30cc1938968bde492d0b4e6fadfd6cf",
+    "current_development_training_artifact": 9911850889,
+    "current_development_training_artifact_digest": "sha256:f74932d096a0baf3d56136e87bd09b655c92a88145153fdb77c4b320bb1b1771",
+    "learner_json_sha256": "faa104a0663d2bda70ebd69afa44b052311918dda10d48789ad6b7bd8aad1918",
+    "training_examples_seen": 45410,
+    "training_examples_with_learnable_assertion_event": 45397,
+    "training_examples_without_learnable_assertion_event": 13,
+    "training_steps_processed_for_used_examples": 73088558,
+    "status": "DEVELOPMENT_TRAINING_EXECUTED_AND_AUDITED; NOT_CANONICAL_3.1_LEARNER"
   },
   "unresolved_from_snapshot": [
     "X2 strategic-independence contract",
