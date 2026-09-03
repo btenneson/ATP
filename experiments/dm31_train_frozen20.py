@@ -9,7 +9,7 @@ from data_mind_3.training.frozen20 import train_from_files
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Train DATA MIND 3.1 learner on the frozen 95% set.mm corpus."
+        description="Train the explicit development learner on the frozen 95% set.mm corpus."
     )
     ap.add_argument("--setmm", required=True)
     ap.add_argument(
@@ -23,10 +23,22 @@ def main() -> int:
         lock_path=args.lock,
         output_path=args.out,
     )
+    model = artifact["model"]
     summary = {k: v for k, v in artifact.items() if k != "model"}
-    summary["learner_backend"] = artifact["model"]["learner_backend"]
-    summary["trained_theorems"] = artifact["model"]["trained_theorems"]
-    summary["training_steps_processed"] = artifact["model"]["training_steps_processed"]
+    summary.update({
+        "learner_backend": model["learner_backend"],
+        "training_examples_seen": model["training_examples_seen"],
+        "training_examples_with_learnable_assertion_event": model[
+            "training_examples_with_learnable_assertion_event"
+        ],
+        "training_examples_without_learnable_assertion_event": model[
+            "training_examples_without_learnable_assertion_event"
+        ],
+        "skipped_training_examples": model["skipped_training_examples"],
+        "training_steps_processed_for_used_examples": model[
+            "training_steps_processed_for_used_examples"
+        ],
+    })
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
