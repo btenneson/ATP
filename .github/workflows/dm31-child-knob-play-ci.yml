@@ -1,0 +1,28 @@
+name: DATA MIND 3.1 child knob-play CI
+
+on:
+  push:
+    branches: [dm31-child-knob-play]
+    paths:
+      - 'data_mind_3/control/**'
+      - 'data_mind_3/tests/test_adaptive_control.py'
+      - 'run_dm3_metamath_target.py'
+      - '.github/workflows/dm31-child-knob-play-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test-child-play:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+      - name: Test adaptive control, child play, inverse escape, and Metamath bridge
+        run: |
+          PYTHONPATH=. pytest -q \
+            data_mind_3/tests/test_adaptive_control.py \
+            data_mind_3/tests/test_metamath_adapter.py
