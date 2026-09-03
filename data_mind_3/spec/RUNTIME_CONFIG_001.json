@@ -2,6 +2,9 @@
   "architecture_snapshot_sha256": "e1dd2785b83415a930b23bf432830444b637a61ee4266e710c3c1a41c666a8b0",
   "status": "UNRESOLVED_DO_NOT_RUN_OFFICIAL",
   "rule": "null means no user-approved value exists; runtime must not invent a default",
+  "official_settlement_entrypoint": null,
+  "official_learner_backend": null,
+  "official_learner_artifact_sha256": null,
   "couples": {
     "P": {"members": ["P1", "P2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
     "R": {"members": ["R1", "R2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
@@ -39,7 +42,6 @@
   "presentation_manager_trading_runtime_contract": null,
   "communication_topology_beyond_within_couple": null,
   "individual_agent_stop_policy_before_global_settlement": null,
-  "learner_backend_for_official_run": null,
   "settlement_certificate_families": {
     "P": null,
     "R": null,
