@@ -116,7 +116,6 @@ class AdaptiveCreativityController:
             + 0.45 * (c.abstraction_level - 0.5)
             + 0.20 * (c.risk_tolerance - 0.5)
         )
-        definition_factor = 1.0 + 0.80 * (c.abstraction_level - 0.5)
 
         return {
             "candidate_cap": scaled(int(getattr(base, "candidate_cap")), breadth_factor, 4),
@@ -124,7 +123,9 @@ class AdaptiveCreativityController:
             "free_var_completion_cap": scaled(int(getattr(base, "free_var_completion_cap")), completion_factor, 2),
             "max_depth": scaled(int(getattr(base, "max_depth")), depth_factor, 4),
             "term_limit": scaled(16, term_factor, 4),
-            "definition_rounds": max(0, scaled(int(getattr(base, "definition_rounds")), definition_factor, 0)),
+            # 3.0 does one cheap definition update per term request.  Keep that
+            # exact behavior at creativity=0.5; abstraction can move it 0..2.
+            "definition_rounds": max(0, min(2, int(round(1.0 + 2.0 * (c.abstraction_level - 0.5))))),
             "lemma_direction": c.lemma_direction,
             "heuristic_weighting": c.heuristic_weighting,
             "term_ordering": c.term_ordering,
