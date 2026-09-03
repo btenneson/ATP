@@ -5,6 +5,8 @@
   "official_settlement_entrypoint": null,
   "official_learner_backend": null,
   "official_learner_artifact_sha256": null,
+  "official_learner_training_run_id": null,
+  "official_learner_workflow_artifact_name": null,
   "couples": {
     "P": {"members": ["P1", "P2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
     "R": {"members": ["R1", "R2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
