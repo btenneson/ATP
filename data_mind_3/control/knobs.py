@@ -40,6 +40,18 @@ class CreativityVector:
             values[name] = _clamp01(values[name] + float(delta))
         return CreativityVector(**values)
 
+    def inverted(self, name: str) -> "CreativityVector":
+        """Apply the centered ambient additive-group inverse to one knob.
+
+        A normalized knob c in [0,1] is embedded as x = 2c-1 in (R,+).
+        The group inverse is -x; mapping back gives c' = 1-c.
+        """
+        values = asdict(self)
+        if name not in values:
+            raise KeyError(name)
+        values[name] = _clamp01(1.0 - float(values[name]))
+        return CreativityVector(**values)
+
     def to_dict(self) -> dict[str, float]:
         return {k: float(v) for k, v in asdict(self).items()}
 
