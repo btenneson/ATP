@@ -1,0 +1,58 @@
+{
+  "architecture_snapshot_sha256": "e1dd2785b83415a930b23bf432830444b637a61ee4266e710c3c1a41c666a8b0",
+  "status": "UNRESOLVED_DO_NOT_RUN_OFFICIAL",
+  "rule": "null means no user-approved value exists; runtime must not invent a default",
+  "couples": {
+    "P": {"members": ["P1", "P2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
+    "R": {"members": ["R1", "R2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
+    "I": {"members": ["I1", "I2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
+    "C": {"members": ["C1", "C2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true}
+  },
+  "x2_strategy_independence_contract": null,
+  "minimum_resource_floor": {
+    "P1": null,
+    "P2": null,
+    "R1": null,
+    "R2": null,
+    "I1": null,
+    "I2": null,
+    "C1": null,
+    "C2": null
+  },
+  "professor": {
+    "formula": "alpha*q_c + (1-alpha)*exp(-H_c/h)",
+    "alpha": null,
+    "h": null,
+    "transaction_set_R": null,
+    "transaction_cost_function_w": null,
+    "q_c_verified_structure_weighting": null
+  },
+  "child_to_x1_ci_contract": null,
+  "sentinel": {
+    "runtime_contract": null,
+    "time_outlier_rule": null,
+    "memory_outlier_rule": null,
+    "joint_outlier_rule": null,
+    "veto_semantics": null
+  },
+  "quotient_hunter_runtime_contract": null,
+  "presentation_manager_trading_runtime_contract": null,
+  "communication_topology_beyond_within_couple": null,
+  "individual_agent_stop_policy_before_global_settlement": null,
+  "learner_backend_for_official_run": null,
+  "settlement_certificate_families": {
+    "P": null,
+    "R": null,
+    "I": null,
+    "C": null
+  },
+  "benchmark": {
+    "name": "DATA-MIND set.mm Frozen-20 Benchmark 001",
+    "training_count": 45410,
+    "holdout_count": 2390,
+    "target_count": 20,
+    "target_seconds": 1800,
+    "fresh_process_per_target": true,
+    "holdout_proofs_redacted": true
+  }
+}
