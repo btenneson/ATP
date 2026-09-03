@@ -7,7 +7,7 @@ import time
 from typing import Callable, Iterable
 
 from .matcher import apply_substitution, match_statement
-from .parser import Assertion, Database
+from .parser import Assertion, Database, Hypothesis
 
 
 @dataclass(frozen=True)
@@ -37,10 +37,10 @@ class SearchConfig:
     max_expansions: int = 20_000
     max_depth: int = 24
     max_open_goals: int = 24
-    candidate_cap: int = 32
-    match_cap_per_candidate: int = 4
-    max_sequence_len: int = 48
-    timeout_s: float = 300.0
+    candidate_cap: int = 64
+    match_cap_per_candidate: int = 8
+    max_sequence_len: int = 64
+    timeout_s: float = 1800.0
     max_frontier: int = 200_000
 
 
@@ -56,8 +56,19 @@ class SearchResult:
     verification: dict | None = None
 
 
+def _fixed_skeleton(a: Assertion) -> tuple[str, ...]:
+    return tuple(t for t in a.statement if t not in a.mandatory_variables)
+
+
+def _is_subsequence(needle: tuple[str, ...], haystack: tuple[str, ...]) -> bool:
+    if not needle:
+        return True
+    it = iter(haystack)
+    return all(any(x == n for x in it) for n in needle)
+
+
 class StructuralLibrarian:
-    """Target-generic retrieval of a small working shelf from legal prefix assertions."""
+    """Retrieve only structurally possible prefix assertions, then rank them."""
 
     def __init__(self, assertions: Iterable[Assertion]):
         self.assertions = tuple(assertions)
@@ -69,41 +80,80 @@ class StructuralLibrarian:
 
     @staticmethod
     def _score(a: Assertion, goal: tuple[str, ...]) -> float:
-        aset = set(a.statement[1:])
+        fixed = set(_fixed_skeleton(a)[1:])
         gset = set(goal[1:])
-        overlap = len(aset & gset)
-        exact_len_bonus = 2.0 / (1.0 + abs(len(a.statement) - len(goal)))
-        hyp_penalty = 0.15 * len(a.mandatory_hypotheses)
-        theorem_bonus = 0.05 if a.kind == "$p" else 0.0
-        return 2.0 * overlap + exact_len_bonus + theorem_bonus - hyp_penalty
+        overlap = len(fixed & gset)
+        len_bonus = 3.0 / (1.0 + abs(len(a.statement) - len(goal)))
+        hyp_penalty = 0.10 * len(a.mandatory_hypotheses)
+        return 2.5 * overlap + len_bonus - hyp_penalty
 
     def shelf(self, goal: tuple[str, ...], cap: int) -> tuple[Assertion, ...]:
         key = (goal, cap)
         if key in self._cache:
             return self._cache[key]
         pool = self.by_type.get(goal[0], ()) if goal else ()
-        ranked = sorted(pool, key=lambda a: (-self._score(a, goal), a.order, a.label))
+        filtered = [a for a in pool if _is_subsequence(_fixed_skeleton(a), goal)]
+        ranked = sorted(filtered, key=lambda a: (-self._score(a, goal), a.order, a.label))
         value = tuple(ranked[:cap])
         self._cache[key] = value
         return value
 
 
-class PartialCredit:
-    """Search measurement only; never a settlement authority."""
+class SyntaxOracle:
+    """Prefix-derived well-formedness filter; not a mathematical verifier."""
 
+    def __init__(self, db: Database, target: Assertion, legal_assertions: tuple[Assertion, ...]):
+        self.db = db
+        self.assumptions = {h.statement for h in target.mandatory_hypotheses if h.kind == "$f"}
+        syntax = [a for a in legal_assertions if a.statement and a.statement[0] != "|-"]
+        self.librarian = StructuralLibrarian(syntax)
+        self.memo: dict[tuple[str, ...], bool] = {}
+        self.visiting: set[tuple[str, ...]] = set()
+
+    def valid(self, statement: tuple[str, ...], depth: int = 0) -> bool:
+        if statement in self.assumptions:
+            return True
+        if statement in self.memo:
+            return self.memo[statement]
+        if not statement or statement[0] == "|-" or depth > 16 or statement in self.visiting:
+            return False
+        self.visiting.add(statement)
+        try:
+            for cand in self.librarian.shelf(statement, 256):
+                for match in match_statement(
+                    cand, statement, self.db.variables, max_matches=8, max_sequence_len=64
+                ):
+                    subst = match.as_dict()
+                    if any(v not in subst for v in cand.mandatory_variables):
+                        continue
+                    children = [
+                        apply_substitution(h.statement, subst, self.db.variables)
+                        for h in cand.mandatory_hypotheses
+                    ]
+                    if all(self.valid(c, depth + 1) for c in children):
+                        self.memo[statement] = True
+                        return True
+            self.memo[statement] = False
+            return False
+        finally:
+            self.visiting.discard(statement)
+
+
+class PartialCredit:
     @staticmethod
     def value(state: SearchState) -> float:
         if not state.open_goals:
             return 1.0
         mass = sum(len(g.statement) for g in state.open_goals)
-        return 1.0 / (1.0 + len(state.open_goals) + 0.02 * mass)
+        logic_goals = sum(1 for g in state.open_goals if g.statement and g.statement[0] == "|-")
+        return 1.0 / (1.0 + 1.25 * logic_goals + 0.6 * len(state.open_goals) + 0.015 * mass)
 
 
 class Scout:
     @staticmethod
     def successor_score(parent: SearchState, child: SearchState) -> float:
         pc = PartialCredit.value(child)
-        return 8.0 * pc - 0.025 * child.depth - 0.01 * len(child.open_goals)
+        return 10.0 * pc - 0.02 * child.depth - 0.006 * len(child.open_goals)
 
 
 class Sentinel:
@@ -124,23 +174,16 @@ def _instantiate_hypotheses(
     assertion: Assertion,
     subst: dict[str, tuple[str, ...]],
     all_variables: set[str],
-) -> tuple[tuple[str, ...], ...] | None:
-    # Explicit capability boundary of generalized adapter v0.1: mandatory
-    # variables must be constrained by the conclusion match.
+) -> tuple[tuple[Hypothesis, tuple[str, ...]], ...] | None:
     if any(v not in subst for v in assertion.mandatory_variables):
         return None
     return tuple(
-        apply_substitution(h.statement, subst, all_variables)
+        (h, apply_substitution(h.statement, subst, all_variables))
         for h in assertion.mandatory_hypotheses
     )
 
 
-def _dv_ok(
-    assertion: Assertion,
-    subst: dict[str, tuple[str, ...]],
-    target: Assertion,
-    all_variables: set[str],
-) -> bool:
+def _dv_ok(assertion: Assertion, subst: dict[str, tuple[str, ...]], target: Assertion, all_variables: set[str]) -> bool:
     target_dv = target.disjoint_pairs
     for x, y in assertion.disjoint_pairs:
         sx = {t for t in subst.get(x, ()) if t in all_variables}
@@ -181,33 +224,31 @@ def search_target(
     target = db.target(target_label)
     legal_assertions = db.assertions_before(target)
     librarian = StructuralLibrarian(legal_assertions)
+    syntax_oracle = SyntaxOracle(db, target, legal_assertions)
     sentinel = Sentinel(config)
-
     target_hyp_by_stmt = {h.statement: h.label for h in target.mandatory_hypotheses}
-    root = Goal(0, target.statement)
-    initial = SearchState((root,), {}, 1, 0, 0.0)
+
+    initial = SearchState((Goal(0, target.statement),), {}, 1)
     counter = itertools.count()
-    frontier: list[tuple[float, int, SearchState]] = []
-    heapq.heappush(frontier, (0.0, next(counter), initial))
-    expansions = 0
-    generated = 0
+    frontier: list[tuple[float, int, SearchState]] = [(0.0, next(counter), initial)]
+    expansions = generated = 0
     start = time.monotonic()
     historian: list[dict] = []
     best_seen: dict[tuple[tuple[str, ...], ...], int] = {}
 
     while frontier:
         elapsed = time.monotonic() - start
-        allowed, sentinel_state = sentinel.allow(expansions, len(frontier), elapsed)
+        allowed, sstate = sentinel.allow(expansions, len(frontier), elapsed)
         if not allowed:
-            historian.append({"actor": "Sentinel", "action": "stop", "reason": sentinel_state,
+            historian.append({"actor": "Sentinel", "action": "stop", "reason": sstate,
                               "expansions": expansions, "frontier": len(frontier)})
             return SearchResult("UNKNOWN", expansions, generated, elapsed_s=elapsed,
-                                reason=sentinel_state, historian=historian)
+                                reason=sstate, historian=historian)
 
         _, _, state = heapq.heappop(frontier)
         signature = tuple(g.statement for g in state.open_goals)
-        previous_depth = best_seen.get(signature)
-        if previous_depth is not None and previous_depth <= state.depth:
+        prev = best_seen.get(signature)
+        if prev is not None and prev <= state.depth:
             historian.append({"actor": "Quicksand", "action": "duplicate_state_discard",
                               "depth": state.depth, "open_goals": len(state.open_goals)})
             continue
@@ -227,8 +268,6 @@ def search_target(
                                     "verifier_accepted", historian, verification)
             continue
 
-        # Frozen Experiment-004 metric: exactly one expansion per nonterminal
-        # state popped and actually expanded.
         expansions += 1
         goal = state.open_goals[0]
         rest = state.open_goals[1:]
@@ -247,19 +286,24 @@ def search_target(
 
         shelf = librarian.shelf(goal.statement, config.candidate_cap)
         historian.append({"actor": "Librarian", "action": "retrieve", "expansion": expansions,
-                          "goal": " ".join(goal.statement), "shelf_size": len(shelf)})
-
+                          "goal": " ".join(goal.statement), "shelf_size": len(shelf),
+                          "shelf_labels": [a.label for a in shelf]})
+        admitted_here = 0
         for cand in shelf:
-            matches = match_statement(cand, goal.statement, db.variables,
-                                      max_matches=config.match_cap_per_candidate,
-                                      max_sequence_len=config.max_sequence_len)
-            for match in matches:
+            for match in match_statement(
+                cand, goal.statement, db.variables,
+                max_matches=config.match_cap_per_candidate,
+                max_sequence_len=config.max_sequence_len,
+            ):
                 subst = match.as_dict()
                 if not _dv_ok(cand, subst, target, db.variables):
                     continue
-                child_statements = _instantiate_hypotheses(cand, subst, db.variables)
-                if child_statements is None:
+                instantiated = _instantiate_hypotheses(cand, subst, db.variables)
+                if instantiated is None:
                     continue
+                if any(h.kind == "$f" and not syntax_oracle.valid(stmt) for h, stmt in instantiated):
+                    continue
+                child_statements = tuple(stmt for _, stmt in instantiated)
                 if state.depth + 1 > config.max_depth:
                     continue
                 if len(rest) + len(child_statements) > config.max_open_goals:
@@ -279,11 +323,15 @@ def search_target(
                 child.score = Scout.successor_score(state, child)
                 heapq.heappush(frontier, (-child.score, next(counter), child))
                 generated += 1
+                admitted_here += 1
                 historian.append({"actor": "Scout", "action": "score_successor",
                                   "expansion": expansions, "candidate": cand.label,
                                   "score": child.score, "child_open_goals": len(child.open_goals)})
                 historian.append({"actor": "Professor", "action": "admit_successor",
                                   "expansion": expansions, "candidate": cand.label})
+        if admitted_here == 0 and hyp_label is None:
+            historian.append({"actor": "Quicksand", "action": "no_legal_successor",
+                              "expansion": expansions, "goal": " ".join(goal.statement)})
 
     elapsed = time.monotonic() - start
     return SearchResult("UNKNOWN", expansions, generated, elapsed_s=elapsed,
