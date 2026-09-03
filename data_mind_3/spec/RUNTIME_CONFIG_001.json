@@ -45,12 +45,14 @@
     "monitor_time": true,
     "time_reference_mean_formula": "wall_clock_budget_seconds / 100",
     "time_reference_mean_seconds_for_frozen20_target_budget": 18.0,
-    "time_outlier_statistical_cutoff": null,
-    "formula_symbol_count_outlier_statistical_cutoff": null,
+    "outlier_rule": "upper Tukey fence: x > Q3 + 1.5 * IQR, where IQR = Q3 - Q1",
+    "iqr_multiplier": 1.5,
+    "time_outlier_statistical_cutoff": "time > Q3_time + 1.5 * IQR_time",
+    "formula_symbol_count_outlier_statistical_cutoff": "symbol_count > Q3_symbols + 1.5 * IQR_symbols",
     "additional_outlier_conditions": null,
     "on_intervention_strategy": "BFS",
     "veto_semantics": "No kill/stop semantics were specified. Current approved action is strategy change to BFS after at least two outlier conditions are simultaneously met.",
-    "note": "Exact statistical definitions of the outlier cutoffs remain unresolved and must not be invented."
+    "note": "The approved outlier multiplier is 1.5 IQR. With only time and formula-symbol count currently monitored, intervention requires both to be upper outliers."
   },
   "quotient_hunter_runtime_contract": null,
   "quotient_hunter_source_documents": [
