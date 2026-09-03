@@ -1,0 +1,258 @@
+name: DATA MIND 3.1 Experiment 007 Professor P1 PRCOM then F10000
+
+on:
+  push:
+    branches: [dm31-exp007-professor-p1-prcom-f10000]
+    paths:
+      - '.github/workflows/dm31-exp007-professor-p1-prcom-f10000.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  experiment-007:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Check out frozen Experiment 007 branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test runtime
+        run: python -m pip install --quiet pytest
+
+      - name: Preflight architecture, reflective P1, Ocean adapter, and Metamath bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. pytest -q \
+            data_mind_3/tests/test_adaptive_control.py \
+            data_mind_3/tests/test_metamath_adapter.py \
+            data_mind_3/tests/test_professor_reflective_interfaces.py \
+            data_mind_3/tests/test_reflective_p1_runtime.py \
+            data_mind_3/tests/test_ocean_adapter.py
+
+          PYTHONPATH=. python -u run_dm3_metamath_target.py data_mind_3/tests/mini.mm \
+            --label th --verifier metamath.py --candidate-cap 8 --max-expansions 20 \
+            --max-depth 8 --max-open 8 --timeout 30 --reflective-p1 --control-interval 4 \
+            --result exp007_mini_result.json \
+            --historian exp007_mini_historian.jsonl \
+            --experience-out exp007_mini_experience.jsonl
+          python - <<'PY'
+          import json
+          r=json.load(open('exp007_mini_result.json',encoding='utf-8'))
+          assert r['status']=='PROVED', r
+          assert r['verification']['accepted'] is True, r
+          assert r['reflective_p1']['enabled'] is True, r
+          PY
+
+      - name: Download exact frozen historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 --fail -o frozen_set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum frozen_set.mm | awk '{print $1}')" = \
+            "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Record immutable Experiment 007 manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p exp007_results
+          {
+            echo "repo=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "branch=${GITHUB_REF_NAME}"
+            echo "experiment=DATA_MIND_3.1_EXPERIMENT_007_PROFESSOR_P1_PRCOM_F10000"
+            echo "runtime_base_before_prereg=1f4f7c6134be0daeb9bd37904b8bb561960bf9c8"
+            echo "setmm_commit=cd577894d8e6bf8b4fe8014c0d525d531507e4b7"
+            echo "setmm_sha256=$(sha256sum frozen_set.mm | awk '{print $1}')"
+            echo "search_sha256=$(sha256sum data_mind_3/metamath/search.py | awk '{print $1}')"
+            echo "controller_sha256=$(sha256sum data_mind_3/control/controller.py | awk '{print $1}')"
+            echo "reflective_p1_sha256=$(sha256sum data_mind_3/control/reflective.py | awk '{print $1}')"
+            echo "professor_sha256=$(sha256sum data_mind_3/control/professor.py | awk '{print $1}')"
+            echo "agents_sha256=$(sha256sum data_mind_3/control/agents.py | awk '{print $1}')"
+            echo "futurebank_sha256=$(sha256sum data_mind_3/control/futurebank.py | awk '{print $1}')"
+            echo "child_sha256=$(sha256sum data_mind_3/control/child.py | awk '{print $1}')"
+            echo "knobs_sha256=$(sha256sum data_mind_3/control/knobs.py | awk '{print $1}')"
+            echo "metamath_runner_sha256=$(sha256sum run_dm3_metamath_target.py | awk '{print $1}')"
+            echo "verifier_adapter_sha256=$(sha256sum data_mind_3/metamath/verifier.py | awk '{print $1}')"
+            echo "external_metamath_verifier_sha256=$(sha256sum metamath.py | awk '{print $1}')"
+            echo "ocean_generator_sha256=$(sha256sum benchmarks/ocean/generate_ocean_tptp.py | awk '{print $1}')"
+            echo "ocean_solver_sha256=$(sha256sum data_mind_3/ocean/solver.py | awk '{print $1}')"
+            echo "ocean_verifier_sha256=$(sha256sum data_mind_3/ocean/verifier.py | awk '{print $1}')"
+            echo "ocean_runner_sha256=$(sha256sum run_dm31_ocean_target.py | awk '{print $1}')"
+            echo "prcom_candidate_cap=64"
+            echo "prcom_max_expansions_per_lane=20000"
+            echo "prcom_max_depth=24"
+            echo "prcom_max_open=24"
+            echo "prcom_max_frontier=200000"
+            echo "prcom_timeout_s_per_lane=1800"
+            echo "control_interval=16"
+            echo "experience_in=NONE"
+            echo "initial_creativity=all_0.5"
+            echo "P1_professor_facing=true"
+            echo "P1_self_aware=true"
+            echo "P1_child_play=true"
+            echo "P1_professor_scalarization=0.50_verified_structure_plus_0.50_repair_proximity"
+            echo "P1_H_hat=max(0,1/q_raw-1)"
+            echo "P2_professor_facing=false"
+            echo "P2_self_aware=false"
+            echo "P2_child_play=false"
+            echo "P2_adaptive_control=true"
+            echo "P2_runs_only_if_P1_not_PROVED=true"
+            echo "F10000_runs_only_if_both_P_lanes_not_PROVED=true"
+            echo "F10000_seed=1"
+            echo "F10000_search=plain_BFS_serialized_problem_only"
+          } | tee exp007_results/manifest.txt
+
+      - name: Run frozen sequential Experiment 007 protocol
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+
+          echo '=== PRCOM P1: Professor-facing + self-aware + advisory Child ===' | tee exp007_results/p1.log
+          /usr/bin/time -f 'wall_seconds=%e\nmax_rss_kb=%M' -o exp007_results/p1.time \
+            env PYTHONPATH=. python -u run_dm3_metamath_target.py frozen_set.mm \
+              --label prcom --verifier metamath.py \
+              --candidate-cap 64 --max-expansions 20000 --max-depth 24 --max-open 24 \
+              --timeout 1800 --reflective-p1 --control-interval 16 \
+              --experience-out exp007_results/p1_experience.jsonl \
+              --result exp007_results/p1_result.json \
+              --historian exp007_results/p1_historian.jsonl \
+              2>&1 | tee -a exp007_results/p1.log
+          RC_P1=${PIPESTATUS[0]}
+          echo "runner_rc=${RC_P1}" | tee exp007_results/p1_run.txt
+          cat exp007_results/p1.time | tee -a exp007_results/p1_run.txt
+          if [ "$RC_P1" -ne 0 ] && [ "$RC_P1" -ne 1 ]; then
+            echo "PROTOCOL FAILURE: unexpected P1 rc=${RC_P1}" >&2
+            exit "$RC_P1"
+          fi
+          P1_STATUS=$(python -c "import json; print(json.load(open('exp007_results/p1_result.json'))['status'])")
+          echo "P1_STATUS=${P1_STATUS}"
+
+          P2_STATUS=SKIPPED
+          OCEAN_STATUS=SKIPPED
+
+          if [ "$P1_STATUS" != "PROVED" ]; then
+            echo '=== PRCOM P2: protected non-Professor adaptive fallback ===' | tee exp007_results/p2.log
+            /usr/bin/time -f 'wall_seconds=%e\nmax_rss_kb=%M' -o exp007_results/p2.time \
+              env PYTHONPATH=. python -u run_dm3_metamath_target.py frozen_set.mm \
+                --label prcom --verifier metamath.py \
+                --candidate-cap 64 --max-expansions 20000 --max-depth 24 --max-open 24 \
+                --timeout 1800 --adaptive-control --control-interval 16 \
+                --experience-out exp007_results/p2_experience.jsonl \
+                --result exp007_results/p2_result.json \
+                --historian exp007_results/p2_historian.jsonl \
+                2>&1 | tee -a exp007_results/p2.log
+            RC_P2=${PIPESTATUS[0]}
+            echo "runner_rc=${RC_P2}" | tee exp007_results/p2_run.txt
+            cat exp007_results/p2.time | tee -a exp007_results/p2_run.txt
+            if [ "$RC_P2" -ne 0 ] && [ "$RC_P2" -ne 1 ]; then
+              echo "PROTOCOL FAILURE: unexpected P2 rc=${RC_P2}" >&2
+              exit "$RC_P2"
+            fi
+            P2_STATUS=$(python -c "import json; print(json.load(open('exp007_results/p2_result.json'))['status'])")
+            echo "P2_STATUS=${P2_STATUS}"
+          fi
+
+          if [ "$P1_STATUS" != "PROVED" ] && [ "$P2_STATUS" != "PROVED" ]; then
+            echo '=== Conditional Ocean F(10000), seed 1 ===' | tee exp007_results/f10000.log
+            python benchmarks/ocean/generate_ocean_tptp.py \
+              --out exp007_results/ocean_f10000 --seeds 1 --lengths 10000 \
+              2>&1 | tee -a exp007_results/f10000.log
+            RC_GEN=${PIPESTATUS[0]}
+            if [ "$RC_GEN" -ne 0 ]; then
+              echo "PROTOCOL FAILURE: Ocean generator rc=${RC_GEN}" >&2
+              exit "$RC_GEN"
+            fi
+
+            /usr/bin/time -f 'wall_seconds=%e\nmax_rss_kb=%M' -o exp007_results/f10000.time \
+              env PYTHONPATH=. python -u run_dm31_ocean_target.py \
+                exp007_results/ocean_f10000/ocean_L10000_seed1.p \
+                --timeout 1800 --breadcrumb-depth 1000 \
+                --result exp007_results/f10000_result.json \
+                --certificate exp007_results/f10000_certificate.json \
+                --historian exp007_results/f10000_historian.jsonl \
+                2>&1 | tee -a exp007_results/f10000.log
+            RC_OCEAN=${PIPESTATUS[0]}
+            echo "runner_rc=${RC_OCEAN}" | tee exp007_results/f10000_run.txt
+            cat exp007_results/f10000.time | tee -a exp007_results/f10000_run.txt
+            if [ "$RC_OCEAN" -ne 0 ] && [ "$RC_OCEAN" -ne 1 ]; then
+              echo "PROTOCOL FAILURE: unexpected F10000 rc=${RC_OCEAN}" >&2
+              exit "$RC_OCEAN"
+            fi
+            OCEAN_STATUS=$(python -c "import json; print(json.load(open('exp007_results/f10000_result.json'))['status'])")
+            echo "OCEAN_STATUS=${OCEAN_STATUS}"
+          fi
+
+          export P1_STATUS P2_STATUS OCEAN_STATUS
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+
+          out=Path('exp007_results')
+          def load(name):
+              p=out/name
+              return json.loads(p.read_text(encoding='utf-8')) if p.exists() else None
+
+          p1=load('p1_result.json')
+          p2=load('p2_result.json')
+          ocean=load('f10000_result.json')
+
+          assert p1 is not None
+          if p1['status']=='PROVED':
+              assert p1['verification']['accepted'] is True
+              assert p2 is None and ocean is None
+          elif p2 is not None and p2['status']=='PROVED':
+              assert p2['verification']['accepted'] is True
+              assert ocean is None
+          elif ocean is not None and ocean['status']=='PROVED':
+              assert ocean['verification']['accepted'] is True
+              assert ocean['certificate_transitions']==10000
+              assert ocean['declared_depth']==10000
+              assert ocean['hidden_route_access'] is False
+
+          summary={
+              'experiment':'DATA MIND 3.1 Experiment 007',
+              'p1_status':os.environ['P1_STATUS'],
+              'p2_status':os.environ['P2_STATUS'],
+              'f10000_status':os.environ['OCEAN_STATUS'],
+              'p1':p1,
+              'p2':p2,
+              'f10000':ocean,
+              'protocol_note':'P1 is primary 20k comparison; P2 is conditional extra-budget fallback; F10000 runs only if both PRCOM lanes are unproved.'
+          }
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True),encoding='utf-8')
+          print(json.dumps({k:summary[k] for k in ('p1_status','p2_status','f10000_status','protocol_note')},indent=2))
+          PY
+          exit 0
+
+      - name: Show concise scientific summary
+        if: always()
+        shell: bash
+        run: |
+          cat exp007_results/summary.json 2>/dev/null || true
+          echo '--- P1 timing ---'; cat exp007_results/p1_run.txt 2>/dev/null || true
+          echo '--- P2 timing ---'; cat exp007_results/p2_run.txt 2>/dev/null || true
+          echo '--- F10000 timing ---'; cat exp007_results/f10000_run.txt 2>/dev/null || true
+
+      - name: Upload Experiment 007 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-mind-31-exp007-professor-p1-prcom-f10000-${{ github.run_id }}
+          path: |
+            data_mind_3/experiments/EXPERIMENT_007_PROFESSOR_P1_PRCOM_F10000_FREEZE.md
+            exp007_mini_result.json
+            exp007_mini_historian.jsonl
+            exp007_mini_experience.jsonl
+            exp007_results/
+          if-no-files-found: warn
+          retention-days: 90
