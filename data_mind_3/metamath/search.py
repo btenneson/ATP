@@ -6,7 +6,7 @@ import itertools
 import time
 from typing import Callable, Iterable
 
-from .matcher import apply_substitution, match_statement
+from .matcher import apply_substitution, match_pattern, match_statement
 from .parser import Assertion, Database, Hypothesis
 
 
@@ -19,7 +19,9 @@ class Goal:
 @dataclass(frozen=True)
 class Derivation:
     label: str
-    children: tuple[int, ...]
+    # An int is a logical child goal. A tuple[str,...] is a complete syntax
+    # proof emitted by SyntaxOracle for one floating hypothesis.
+    premises: tuple[object, ...]
 
 
 @dataclass
@@ -40,6 +42,9 @@ class SearchConfig:
     candidate_cap: int = 64
     match_cap_per_candidate: int = 8
     max_sequence_len: int = 64
+    free_var_completion_cap: int = 64
+    term_pool_cap_per_type: int = 256
+    definition_rounds: int = 2
     timeout_s: float = 1800.0
     max_frontier: int = 200_000
 
@@ -68,7 +73,7 @@ def _is_subsequence(needle: tuple[str, ...], haystack: tuple[str, ...]) -> bool:
 
 
 class StructuralLibrarian:
-    """Retrieve only structurally possible prefix assertions, then rank them."""
+    """Retrieve structurally possible legal-prefix assertions, then rank them."""
 
     def __init__(self, assertions: Iterable[Assertion]):
         self.assertions = tuple(assertions)
@@ -84,8 +89,9 @@ class StructuralLibrarian:
         gset = set(goal[1:])
         overlap = len(fixed & gset)
         len_bonus = 3.0 / (1.0 + abs(len(a.statement) - len(goal)))
-        hyp_penalty = 0.10 * len(a.mandatory_hypotheses)
-        return 2.5 * overlap + len_bonus - hyp_penalty
+        essential = sum(1 for h in a.mandatory_hypotheses if h.kind == "$e")
+        # A small preference for low-premise rules, not a proof-specific prior.
+        return 2.5 * overlap + len_bonus - 0.08 * essential
 
     def shelf(self, goal: tuple[str, ...], cap: int) -> tuple[Assertion, ...]:
         key = (goal, cap)
@@ -94,49 +100,161 @@ class StructuralLibrarian:
         pool = self.by_type.get(goal[0], ()) if goal else ()
         filtered = [a for a in pool if _is_subsequence(_fixed_skeleton(a), goal)]
         ranked = sorted(filtered, key=lambda a: (-self._score(a, goal), a.order, a.label))
-        value = tuple(ranked[:cap])
+        value = tuple(ranked[:cap] if cap > 0 else ranked)
         self._cache[key] = value
         return value
 
 
 class SyntaxOracle:
-    """Prefix-derived well-formedness filter; not a mathematical verifier."""
+    """Prefix-derived syntax recognizer/proof emitter; it cannot certify `|-` truth."""
 
     def __init__(self, db: Database, target: Assertion, legal_assertions: tuple[Assertion, ...]):
         self.db = db
-        self.assumptions = {h.statement for h in target.mandatory_hypotheses if h.kind == "$f"}
+        self.assumption_proofs = {
+            h.statement: (h.label,) for h in target.mandatory_hypotheses if h.kind == "$f"
+        }
         syntax = [a for a in legal_assertions if a.statement and a.statement[0] != "|-"]
         self.librarian = StructuralLibrarian(syntax)
-        self.memo: dict[tuple[str, ...], bool] = {}
+        self.memo: dict[tuple[str, ...], tuple[str, ...] | None] = {}
         self.visiting: set[tuple[str, ...]] = set()
 
-    def valid(self, statement: tuple[str, ...], depth: int = 0) -> bool:
-        if statement in self.assumptions:
-            return True
+    def prove(self, statement: tuple[str, ...], depth: int = 0) -> tuple[str, ...] | None:
+        assumed = self.assumption_proofs.get(statement)
+        if assumed is not None:
+            return assumed
         if statement in self.memo:
             return self.memo[statement]
-        if not statement or statement[0] == "|-" or depth > 16 or statement in self.visiting:
-            return False
+        if not statement or statement[0] == "|-" or depth > 18 or statement in self.visiting:
+            return None
         self.visiting.add(statement)
         try:
-            for cand in self.librarian.shelf(statement, 256):
-                for match in match_statement(
-                    cand, statement, self.db.variables, max_matches=8, max_sequence_len=64
-                ):
+            for cand in self.librarian.shelf(statement, 512):
+                for match in match_statement(cand, statement, self.db.variables, max_matches=12):
                     subst = match.as_dict()
                     if any(v not in subst for v in cand.mandatory_variables):
                         continue
-                    children = [
-                        apply_substitution(h.statement, subst, self.db.variables)
-                        for h in cand.mandatory_hypotheses
-                    ]
-                    if all(self.valid(c, depth + 1) for c in children):
-                        self.memo[statement] = True
-                        return True
-            self.memo[statement] = False
-            return False
+                    chunks: list[str] = []
+                    ok = True
+                    for h in cand.mandatory_hypotheses:
+                        inst = apply_substitution(h.statement, subst, self.db.variables)
+                        if h.kind == "$e":
+                            ok = False
+                            break
+                        child = self.prove(inst, depth + 1)
+                        if child is None:
+                            ok = False
+                            break
+                        chunks.extend(child)
+                    if ok:
+                        result = tuple(chunks + [cand.label])
+                        self.memo[statement] = result
+                        return result
+            self.memo[statement] = None
+            return None
         finally:
             self.visiting.discard(statement)
+
+    def valid(self, statement: tuple[str, ...]) -> bool:
+        return self.prove(statement) is not None
+
+
+class TermScout:
+    """Generate typed term proposals without consulting the target proof.
+
+    Sources are visible target syntax plus legal-prefix `df-*` equalities. This
+    is a generic presentation-exploration mechanism: definitions suggest useful
+    alternate terms, but only the final Metamath verifier can establish a proof.
+    """
+
+    def __init__(
+        self,
+        db: Database,
+        target: Assertion,
+        legal_assertions: tuple[Assertion, ...],
+        syntax: SyntaxOracle,
+        config: SearchConfig,
+    ):
+        self.db = db
+        self.target = target
+        self.syntax = syntax
+        self.config = config
+        self.types = sorted({tc for _, tc in target.variable_types} | {"class", "wff", "setvar"})
+        self.pool: dict[str, set[tuple[str, ...]]] = {tc: set() for tc in self.types}
+        self.definitions = tuple(
+            a for a in legal_assertions
+            if a.label.startswith("df-")
+            and a.statement and a.statement[0] == "|-"
+            and not any(h.kind == "$e" for h in a.mandatory_hypotheses)
+            and "=" in a.statement[1:]
+        )
+        for h in target.mandatory_hypotheses:
+            if h.kind == "$f" and h.typecode and h.variable:
+                self.pool.setdefault(h.typecode, set()).add((h.variable,))
+        self.observe(target.statement)
+        self._definition_expand(config.definition_rounds)
+
+    def _add_spans(self, tokens: tuple[str, ...]) -> bool:
+        changed = False
+        # Formula typecode is not part of the term itself.
+        body = tokens[1:] if tokens and tokens[0] in ("|-", "wff", "class", "setvar") else tokens
+        n = len(body)
+        for i in range(n):
+            for j in range(i + 1, min(n, i + 24) + 1):
+                span = body[i:j]
+                for tc in self.types:
+                    bucket = self.pool.setdefault(tc, set())
+                    if len(bucket) >= self.config.term_pool_cap_per_type or span in bucket:
+                        continue
+                    if self.syntax.valid((tc,) + span):
+                        bucket.add(span)
+                        changed = True
+        return changed
+
+    def observe(self, statement: tuple[str, ...]) -> None:
+        self._add_spans(statement)
+
+    def _definition_expand(self, rounds: int) -> None:
+        for _ in range(max(0, rounds)):
+            changed = False
+            class_terms = list(self.pool.get("class", ()))
+            for a in self.definitions:
+                try:
+                    eq = a.statement.index("=", 1)
+                except ValueError:
+                    continue
+                left = tuple(a.statement[1:eq])
+                right = tuple(a.statement[eq + 1:])
+                if not left or not right:
+                    continue
+                vars_ = a.mandatory_variables
+                tmap = a.variable_type_map
+                for term in class_terms:
+                    for src, dst in ((left, right), (right, left)):
+                        for m in match_pattern(src, term, vars_, tmap, max_matches=4):
+                            subst = m.as_dict()
+                            if any(v in dst and v not in subst for v in vars_):
+                                continue
+                            proposal = apply_substitution(dst, subst, self.db.variables)
+                            if self.syntax.valid(("class",) + proposal):
+                                bucket = self.pool.setdefault("class", set())
+                                if proposal not in bucket and len(bucket) < self.config.term_pool_cap_per_type:
+                                    bucket.add(proposal)
+                                    changed = True
+                                changed = self._add_spans(("class",) + proposal) or changed
+            if not changed:
+                break
+
+    def terms(self, typecode: str, goal: tuple[str, ...], limit: int = 24) -> tuple[tuple[str, ...], ...]:
+        self.observe(goal)
+        # One cheap definition update allows newly observed goal subterms to trade.
+        self._definition_expand(1)
+        terms = self.pool.get(typecode, set())
+        gset = set(goal)
+        ranked = sorted(
+            terms,
+            key=lambda t: (-len(set(t) & gset), len(t), t),
+        )
+        return tuple(ranked[:limit])
 
 
 class PartialCredit:
@@ -145,15 +263,13 @@ class PartialCredit:
         if not state.open_goals:
             return 1.0
         mass = sum(len(g.statement) for g in state.open_goals)
-        logic_goals = sum(1 for g in state.open_goals if g.statement and g.statement[0] == "|-")
-        return 1.0 / (1.0 + 1.25 * logic_goals + 0.6 * len(state.open_goals) + 0.015 * mass)
+        return 1.0 / (1.0 + 0.9 * len(state.open_goals) + 0.012 * mass)
 
 
 class Scout:
     @staticmethod
     def successor_score(parent: SearchState, child: SearchState) -> float:
-        pc = PartialCredit.value(child)
-        return 10.0 * pc - 0.02 * child.depth - 0.006 * len(child.open_goals)
+        return 12.0 * PartialCredit.value(child) - 0.02 * child.depth - 0.005 * len(child.open_goals)
 
 
 class Sentinel:
@@ -170,19 +286,6 @@ class Sentinel:
         return True, "GREEN"
 
 
-def _instantiate_hypotheses(
-    assertion: Assertion,
-    subst: dict[str, tuple[str, ...]],
-    all_variables: set[str],
-) -> tuple[tuple[Hypothesis, tuple[str, ...]], ...] | None:
-    if any(v not in subst for v in assertion.mandatory_variables):
-        return None
-    return tuple(
-        (h, apply_substitution(h.statement, subst, all_variables))
-        for h in assertion.mandatory_hypotheses
-    )
-
-
 def _dv_ok(assertion: Assertion, subst: dict[str, tuple[str, ...]], target: Assertion, all_variables: set[str]) -> bool:
     target_dv = target.disjoint_pairs
     for x, y in assertion.disjoint_pairs:
@@ -197,6 +300,33 @@ def _dv_ok(assertion: Assertion, subst: dict[str, tuple[str, ...]], target: Asse
     return True
 
 
+def _complete_substitutions(
+    assertion: Assertion,
+    base: dict[str, tuple[str, ...]],
+    term_scout: TermScout,
+    goal: tuple[str, ...],
+    cap: int,
+) -> tuple[dict[str, tuple[str, ...]], ...]:
+    missing = [v for v in sorted(assertion.mandatory_variables) if v not in base]
+    if not missing:
+        return (dict(base),)
+    pools: list[tuple[tuple[str, ...], ...]] = []
+    tmap = assertion.variable_type_map
+    for v in missing:
+        terms = term_scout.terms(tmap.get(v, "class"), goal, limit=16)
+        if not terms:
+            return ()
+        pools.append(terms)
+    out: list[dict[str, tuple[str, ...]]] = []
+    for values in itertools.product(*pools):
+        s = dict(base)
+        s.update(zip(missing, values))
+        out.append(s)
+        if len(out) >= cap:
+            break
+    return tuple(out)
+
+
 def _linearize(root_gid: int, derivations: dict[int, Derivation]) -> tuple[str, ...]:
     out: list[str] = []
     visiting: set[int] = set()
@@ -206,8 +336,11 @@ def _linearize(root_gid: int, derivations: dict[int, Derivation]) -> tuple[str, 
             raise RuntimeError("cycle in derivation")
         d = derivations[gid]
         visiting.add(gid)
-        for c in d.children:
-            walk(c)
+        for premise in d.premises:
+            if isinstance(premise, int):
+                walk(premise)
+            else:
+                out.extend(premise)
         out.append(d.label)
         visiting.remove(gid)
 
@@ -224,7 +357,8 @@ def search_target(
     target = db.target(target_label)
     legal_assertions = db.assertions_before(target)
     librarian = StructuralLibrarian(legal_assertions)
-    syntax_oracle = SyntaxOracle(db, target, legal_assertions)
+    syntax = SyntaxOracle(db, target, legal_assertions)
+    term_scout = TermScout(db, target, legal_assertions, syntax, config)
     sentinel = Sentinel(config)
     target_hyp_by_stmt = {h.statement: h.label for h in target.mandatory_hypotheses}
 
@@ -271,6 +405,7 @@ def search_target(
         expansions += 1
         goal = state.open_goals[0]
         rest = state.open_goals[1:]
+        term_scout.observe(goal.statement)
         historian.append({"actor": "Search", "action": "expand", "expansion": expansions,
                           "goal": " ".join(goal.statement), "open_goals": len(state.open_goals),
                           "pc": PartialCredit.value(state)})
@@ -295,40 +430,48 @@ def search_target(
                 max_matches=config.match_cap_per_candidate,
                 max_sequence_len=config.max_sequence_len,
             ):
-                subst = match.as_dict()
-                if not _dv_ok(cand, subst, target, db.variables):
-                    continue
-                instantiated = _instantiate_hypotheses(cand, subst, db.variables)
-                if instantiated is None:
-                    continue
-                if any(h.kind == "$f" and not syntax_oracle.valid(stmt) for h, stmt in instantiated):
-                    continue
-                child_statements = tuple(stmt for _, stmt in instantiated)
-                if state.depth + 1 > config.max_depth:
-                    continue
-                if len(rest) + len(child_statements) > config.max_open_goals:
-                    continue
+                for subst in _complete_substitutions(
+                    cand, match.as_dict(), term_scout, goal.statement,
+                    config.free_var_completion_cap,
+                ):
+                    if not _dv_ok(cand, subst, target, db.variables):
+                        continue
+                    if state.depth + 1 > config.max_depth:
+                        continue
 
-                deriv = dict(state.derivations)
-                child_ids: list[int] = []
-                new_goals: list[Goal] = []
-                ngid = state.next_gid
-                for stmt in child_statements:
-                    child_ids.append(ngid)
-                    new_goals.append(Goal(ngid, stmt))
-                    ngid += 1
-                deriv[goal.gid] = Derivation(cand.label, tuple(child_ids))
-                child = SearchState(tuple(new_goals) + rest, deriv, ngid,
-                                    state.depth + 1, last_action=cand.label)
-                child.score = Scout.successor_score(state, child)
-                heapq.heappush(frontier, (-child.score, next(counter), child))
-                generated += 1
-                admitted_here += 1
-                historian.append({"actor": "Scout", "action": "score_successor",
-                                  "expansion": expansions, "candidate": cand.label,
-                                  "score": child.score, "child_open_goals": len(child.open_goals)})
-                historian.append({"actor": "Professor", "action": "admit_successor",
-                                  "expansion": expansions, "candidate": cand.label})
+                    premise_refs: list[object] = []
+                    new_goals: list[Goal] = []
+                    ngid = state.next_gid
+                    ok = True
+                    for h in cand.mandatory_hypotheses:
+                        inst = apply_substitution(h.statement, subst, db.variables)
+                        if h.kind == "$f":
+                            syntax_proof = syntax.prove(inst)
+                            if syntax_proof is None:
+                                ok = False
+                                break
+                            premise_refs.append(syntax_proof)
+                        else:
+                            premise_refs.append(ngid)
+                            new_goals.append(Goal(ngid, inst))
+                            ngid += 1
+                    if not ok or len(rest) + len(new_goals) > config.max_open_goals:
+                        continue
+
+                    deriv = dict(state.derivations)
+                    deriv[goal.gid] = Derivation(cand.label, tuple(premise_refs))
+                    child = SearchState(tuple(new_goals) + rest, deriv, ngid,
+                                        state.depth + 1, last_action=cand.label)
+                    child.score = Scout.successor_score(state, child)
+                    heapq.heappush(frontier, (-child.score, next(counter), child))
+                    generated += 1
+                    admitted_here += 1
+                    historian.append({"actor": "Scout", "action": "score_successor",
+                                      "expansion": expansions, "candidate": cand.label,
+                                      "score": child.score, "child_open_goals": len(child.open_goals),
+                                      "free_vars_completed": len(cand.mandatory_variables - match.as_dict().keys())})
+                    historian.append({"actor": "Professor", "action": "admit_successor",
+                                      "expansion": expansions, "candidate": cand.label})
         if admitted_here == 0 and hyp_label is None:
             historian.append({"actor": "Quicksand", "action": "no_legal_successor",
                               "expansion": expansions, "goal": " ".join(goal.statement)})
