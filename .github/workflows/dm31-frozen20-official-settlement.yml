@@ -1,0 +1,208 @@
+name: DATA MIND 3.1 Frozen-20 official settlement
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  PYTHONPATH: .
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SETMM_SHA256: 19cb1ec229f3f11e36ff439a6381878864d9f2d4906f20fc9401346b309894e3
+
+jobs:
+  architecture-gate:
+    name: exact architecture gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require exact complete live-wired DATA MIND 3.1
+        run: |
+          set -euo pipefail
+          python experiments/dm31_architecture_preflight.py --mode official \
+            | tee official_architecture_preflight.json
+      - name: Upload gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-official-gate-${{ github.run_id }}
+          path: |
+            official_architecture_preflight.json
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.sha256.txt
+            data_mind_3/spec/IMPLEMENTATION_STATUS_001.json
+            data_mind_3/spec/RUNTIME_CONFIG_001.json
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          if-no-files-found: error
+          retention-days: 90
+
+  settle:
+    name: target ${{ matrix.ordinal }}
+    needs: architecture-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        ordinal: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Re-run exact architecture gate in fresh target job
+        run: |
+          set -euo pipefail
+          python experiments/dm31_architecture_preflight.py --mode official \
+            > target_preflight.json
+
+      - name: Read frozen learner provenance
+        id: learner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          cfg=json.load(open('data_mind_3/spec/RUNTIME_CONFIG_001.json'))
+          run_id=cfg.get('official_learner_training_run_id')
+          name=cfg.get('official_learner_workflow_artifact_name')
+          if not isinstance(run_id, int) or run_id <= 0:
+              raise SystemExit('official_learner_training_run_id is not frozen')
+          if not isinstance(name, str) or not name:
+              raise SystemExit('official_learner_workflow_artifact_name is not frozen')
+          print(f'run_id={run_id}')
+          print(f'artifact_name={name}')
+          PY
+
+      - name: Download exact frozen learner artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ steps.learner.outputs.artifact_name }}
+          path: frozen_training
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.learner.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Locate learner JSON
+        id: learner_path
+        shell: bash
+        run: |
+          set -euo pipefail
+          p=$(find frozen_training -type f -path '*/training_artifact/learner.json' -print -quit)
+          if [ -z "$p" ]; then
+            echo 'learner.json missing from frozen training artifact' >&2
+            find frozen_training -maxdepth 4 -type f -print >&2 || true
+            exit 1
+          fi
+          echo "path=$p" >> "$GITHUB_OUTPUT"
+          sha256sum "$p" | tee learner_download_sha256.txt
+
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+
+      - name: Run one fresh held-out settlement target
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(printf 'settlement_results/target-%02d' '${{ matrix.ordinal }}')
+          mkdir -p "$out"
+          # The architecture runtime owns the exact 1800-second target budget.
+          # This outer timeout is only a stuck-process safety margin.
+          timeout --signal=TERM --kill-after=30s 1950s \
+            python -u experiments/dm31_settle_frozen20_target.py \
+              --target-ordinal '${{ matrix.ordinal }}' \
+              --setmm set.mm \
+              --learner '${{ steps.learner_path.outputs.path }}' \
+              --out "$out" \
+            2>&1 | tee "$out/console.log"
+
+      - name: Require eight-agent activity accounting in result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(printf 'settlement_results/target-%02d' '${{ matrix.ordinal }}')
+          test -f "$out/result.json"
+          python - "$out/result.json" <<'PY'
+          import json, sys
+          result=json.load(open(sys.argv[1]))
+          want={'P1','P2','R1','R2','I1','I2','C1','C2'}
+          got=set(result.get('agent_activity',{}))
+          assert got==want, (got,want)
+          assert all(result['agent_activity'][x].get('initialized') is True for x in want)
+          assert result.get('silent_component_substitution') in (False,None)
+          print('EIGHT_AGENT_ACCOUNTING_GATE=PASS')
+          PY
+
+      - name: Upload target record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-settlement-target-${{ matrix.ordinal }}-${{ github.run_id }}
+          path: |
+            settlement_results/
+            target_preflight.json
+            learner_download_sha256.txt
+            data_mind_3/spec/RUNTIME_CONFIG_001.json
+            data_mind_3/spec/IMPLEMENTATION_STATUS_001.json
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  summarize:
+    name: summarize Frozen-20 settlement
+    if: always()
+    needs: [architecture-gate, settle]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download target artifacts that exist
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: dm31-settlement-target-*-${{ github.run_id }}
+          path: collected
+          merge-multiple: true
+      - name: Build summary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=[]
+          for p in sorted(Path('collected').glob('settlement_results/target-*/result.json')):
+              r=json.loads(p.read_text())
+              rows.append({
+                  'target':r.get('target'),
+                  'status':r.get('status'),
+                  'result_path':str(p),
+              })
+          summary={
+              'architecture_snapshot_sha256':'e1dd2785b83415a930b23bf432830444b637a61ee4266e710c3c1a41c666a8b0',
+              'benchmark':'DATA-MIND set.mm Frozen-20 Benchmark 001',
+              'expected_targets':20,
+              'completed_target_records':len(rows),
+              'results':rows,
+          }
+          Path('settlement_summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-frozen20-settlement-summary-${{ github.run_id }}
+          path: settlement_summary.json
+          retention-days: 90
