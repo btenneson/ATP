@@ -7,11 +7,15 @@ on:
     paths:
       - 'data_mind_3/ARCHITECTURE_CONTRACT.md'
       - 'data_mind_3/control/**'
+      - 'data_mind_3/ocean/**'
       - 'data_mind_3/tests/test_professor_reflective_interfaces.py'
       - 'data_mind_3/tests/test_reflective_p1_runtime.py'
+      - 'data_mind_3/tests/test_ocean_adapter.py'
       - 'data_mind_3/tests/test_adaptive_control.py'
       - 'data_mind_3/tests/test_metamath_adapter.py'
       - 'run_dm3_metamath_target.py'
+      - 'run_dm31_ocean_target.py'
+      - 'benchmarks/ocean/generate_ocean_tptp.py'
       - '.github/workflows/dm31-professor-reflective-agents-ci.yml'
 
 permissions:
@@ -26,15 +30,16 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install --quiet pytest
-      - name: Test existing 3.1 behavior plus Professor/reflection/FUTUREBANK runtime
+      - name: Test existing 3.1 behavior plus Professor/reflection/FUTUREBANK and Ocean runtime
         run: |
           PYTHONPATH=. pytest -q \
             data_mind_3/tests/test_adaptive_control.py \
             data_mind_3/tests/test_metamath_adapter.py \
             data_mind_3/tests/test_professor_reflective_interfaces.py \
-            data_mind_3/tests/test_reflective_p1_runtime.py
+            data_mind_3/tests/test_reflective_p1_runtime.py \
+            data_mind_3/tests/test_ocean_adapter.py
 
-      - name: Run reflective P1 through the generic Metamath bridge and independent verifier
+      - name: Run reflective P1 through generic Metamath bridge and independent verifier
         shell: bash
         run: |
           set -euo pipefail
@@ -52,4 +57,25 @@ jobs:
           assert r['reflective_p1']['enabled'] is True, r
           assert r['reflective_p1']['agent']=='P1', r
           print('reflective P1 mini bridge verified')
+          PY
+
+      - name: Generate and independently verify a small Ocean F(10) calibration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python benchmarks/ocean/generate_ocean_tptp.py \
+            --out dm31_ocean_ci --seeds 1 --lengths 10
+          PYTHONPATH=. python -u run_dm31_ocean_target.py dm31_ocean_ci/ocean_L10_seed1.p \
+            --timeout 30 --breadcrumb-depth 5 \
+            --result dm31_ocean_ci_result.json \
+            --certificate dm31_ocean_ci_certificate.json \
+            --historian dm31_ocean_ci_historian.jsonl
+          python - <<'PY'
+          import json
+          r=json.load(open('dm31_ocean_ci_result.json',encoding='utf-8'))
+          assert r['status']=='PROVED', r
+          assert r['certificate_transitions']==10, r
+          assert r['verification']['accepted'] is True, r
+          assert r['hidden_route_access'] is False, r
+          print('Ocean F(10) adapter independently verified')
           PY
