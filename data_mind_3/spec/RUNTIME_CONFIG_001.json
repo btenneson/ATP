@@ -13,16 +13,14 @@
     "I": {"members": ["I1", "I2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true},
     "C": {"members": ["C1", "C2"], "x1_self_awareness": ["c", "i"], "professor_to_x1_only": true}
   },
-  "x2_strategy_independence_contract": null,
+  "x2_strategy_independence_contract": {
+    "required": true,
+    "meaning": "For each couple, X2 remains strategically independent of X1: X2 may disagree with X1, ignore X1 advice, and pursue a different search trajectory.",
+    "terminology_note": "This strategic independence is distinct from the technical SIC/formal-system independence settlement meaning of role I."
+  },
   "minimum_resource_floor": {
-    "P1": null,
-    "P2": null,
-    "R1": null,
-    "R2": null,
-    "I1": null,
-    "I2": null,
-    "C1": null,
-    "C2": null
+    "guaranteed": false,
+    "policy": "No agent has a fixed minimum resource guarantee. All eight agents nevertheless remain active/eligible until global settlement; lack of a fixed floor is not permission to declare an agent stopped."
   },
   "professor": {
     "formula": "alpha*q_c + (1-alpha)*exp(-H_c/h)",
@@ -30,25 +28,56 @@
     "h": null,
     "transaction_set_R": null,
     "transaction_cost_function_w": null,
-    "q_c_verified_structure_weighting": null
+    "q_c_verified_structure_weighting": null,
+    "parameter_inspiration_source": "6_Multi-Dose_Concentration_Derivation_v6.1_with_TOC(2).pdf; user requested joint exploration before freezing parameters"
   },
-  "child_to_x1_ci_contract": null,
+  "child_to_x1_ci_contract": {
+    "role": "creativity_source",
+    "authority": "advisory_only",
+    "proof_authority": false,
+    "note": "Child supplies creativity; it is not the executive/boss of X1 or the verifier."
+  },
   "sentinel": {
-    "runtime_contract": null,
-    "time_outlier_rule": null,
-    "memory_outlier_rule": null,
-    "joint_outlier_rule": null,
-    "veto_semantics": null
+    "self_aware": true,
+    "minimum_simultaneous_outlier_conditions_to_intervene": 2,
+    "monitor_ram": false,
+    "monitor_formula_symbol_count": true,
+    "monitor_time": true,
+    "time_reference_mean_formula": "wall_clock_budget_seconds / 100",
+    "time_reference_mean_seconds_for_frozen20_target_budget": 18.0,
+    "time_outlier_statistical_cutoff": null,
+    "formula_symbol_count_outlier_statistical_cutoff": null,
+    "additional_outlier_conditions": null,
+    "on_intervention_strategy": "BFS",
+    "veto_semantics": "No kill/stop semantics were specified. Current approved action is strategy change to BFS after at least two outlier conditions are simultaneously met.",
+    "note": "Exact statistical definitions of the outlier cutoffs remain unresolved and must not be invented."
   },
   "quotient_hunter_runtime_contract": null,
+  "quotient_hunter_source_documents": [
+    "Redundancy-Quotient Geodesic Theory for Formal Proofs(1).pdf",
+    "DATA_4_Quotient_Compass_Theorems_and_Conjectures(1).pdf",
+    "DATA_4_2_Quotient_Density_Compass_and_Conservative_Fallback_v0_1(1).pdf"
+  ],
   "presentation_manager_trading_runtime_contract": null,
-  "communication_topology_beyond_within_couple": null,
-  "individual_agent_stop_policy_before_global_settlement": null,
+  "presentation_manager_source_documents": [
+    "Trading Theorem 001(1).pdf",
+    "Proof_Density_After_Trading_001(6).pdf",
+    "nsa_and_trading_speedup(5).pdf"
+  ],
+  "communication_topology_beyond_within_couple": {
+    "cross_role_direct_communication_allowed": true,
+    "scope": "All principal agents may talk across couples/roles.",
+    "trust_boundary": "Agent communication is untrusted information and does not enter BANK unless the mathematical content is independently verified."
+  },
+  "individual_agent_stop_policy_before_global_settlement": {
+    "allowed": false,
+    "policy": "No individual principal agent may stop before global certified settlement."
+  },
   "settlement_certificate_families": {
-    "P": null,
-    "R": null,
-    "I": null,
-    "C": null
+    "P": "certificate proving the target in the protected formal system",
+    "R": "certificate proving/refuting the target via its negation in the protected formal system",
+    "I": "certificate establishing formal independence of the target from the relevant axiom/system context, i.e. neither target nor negation is derivable under the declared independence certificate method",
+    "C": "certificate establishing contradiction/inconsistency in the relevant background assumptions/system"
   },
   "benchmark": {
     "name": "DATA-MIND set.mm Frozen-20 Benchmark 001",
