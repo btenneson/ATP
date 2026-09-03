@@ -1,0 +1,164 @@
+name: DATA MIND 3.1 Frozen-20 development training
+
+on:
+  push:
+    branches: [dm31-frozen20-training-settlement-dev]
+    paths:
+      - '.github/workflows/dm31-frozen20-training-dev.yml'
+      - 'data_mind_3/spec/**'
+      - 'data_mind_3/control/professor_geometry.py'
+      - 'data_mind_3/training/**'
+      - 'data_mind_3/tests/test_professor_geometry.py'
+      - 'experiments/dm31_architecture_preflight.py'
+      - 'experiments/dm31_train_frozen20.py'
+      - 'benchmarks/data-mind-3.1-frozen20-001/**'
+      - 'metamath.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SETMM_SHA256: 19cb1ec229f3f11e36ff439a6381878864d9f2d4906f20fc9401346b309894e3
+
+jobs:
+  train-development-backend:
+    name: guarded 95 percent training only
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out development branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile guarded training code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            data_mind_3/control/professor_geometry.py \
+            data_mind_3/training/frozen20.py \
+            experiments/dm31_architecture_preflight.py \
+            experiments/dm31_train_frozen20.py \
+            metamath.py
+
+      - name: Unit-test exact Professor formula
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest data_mind_3.tests.test_professor_geometry -v \
+            2>&1 | tee professor_geometry_tests.log
+
+      - name: Report architecture implementation status
+        shell: bash
+        run: |
+          set -euo pipefail
+          python experiments/dm31_architecture_preflight.py --mode report \
+            | tee architecture_preflight_report.json
+
+      - name: Prove official-run guard aborts on incomplete architecture
+        shell: bash
+        run: |
+          set +e
+          python experiments/dm31_architecture_preflight.py --mode official \
+            > official_preflight_expected_abort.log 2>&1
+          rc=$?
+          cat official_preflight_expected_abort.log
+          if [ "$rc" -ne 2 ]; then
+            echo "Expected official preflight to abort with rc=2; got rc=$rc" >&2
+            exit 1
+          fi
+          grep -q 'OFFICIAL DATA MIND 3.1 RUN ABORTED' official_preflight_expected_abort.log
+          exit 0
+
+      - name: Fetch exact frozen set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+          sha256sum set.mm | tee setmm_sha256.txt
+
+      - name: Verify frozen database parses under independent verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python metamath.py verify set.mm --limit 2000 --progress 1000 \
+            2>&1 | tee metamath_prefix_verify.log
+
+      - name: Train explicit development learner on frozen 95 percent
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p training_artifact
+          python -u experiments/dm31_train_frozen20.py \
+            --setmm set.mm \
+            --lock benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json \
+            --out training_artifact/learner.json \
+            2>&1 | tee training_artifact/training.log
+          sha256sum training_artifact/learner.json \
+            | tee training_artifact/learner.sha256.txt
+
+      - name: Enforce no-heldout-training invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=json.loads(Path('training_artifact/learner.json').read_text())
+          assert a['benchmark_name']=='DATA-MIND set.mm Frozen-20 Benchmark 001'
+          assert a['training_count']==45410
+          assert a['holdout_count']==2390
+          assert len(a['target_labels'])==20
+          assert a['heldout_proofs_emitted'] is False
+          assert a['heldout_proofs_used_for_training'] is False
+          assert a['target_exposed_to_training'] is False
+          assert a['model']['learner_backend']=='setmm_count_priors_v1'
+          print('NO_HELDOUT_TRAINING_GATE=PASS')
+          PY
+
+      - name: Write development status
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo 'architecture=DATA MIND 3.1 Snapshot 001'
+            echo 'benchmark=DATA-MIND set.mm Frozen-20 Benchmark 001'
+            echo 'training_backend=setmm_count_priors_v1 (development; not canonical 3.1 learner)'
+            echo 'training_theorems=45410'
+            echo 'heldout_theorems=2390'
+            echo 'targets=20 frozen heldout targets'
+            echo 'settlement_launched=false'
+            echo 'reason=official architecture preflight intentionally blocks incomplete/surrogate runtime'
+            echo "commit=${GITHUB_SHA}"
+          } | tee development_status.txt
+
+      - name: Upload guarded training evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-frozen20-development-training-${{ github.run_id }}
+          path: |
+            training_artifact/
+            architecture_preflight_report.json
+            official_preflight_expected_abort.log
+            professor_geometry_tests.log
+            setmm_sha256.txt
+            metamath_prefix_verify.log
+            development_status.txt
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.sha256.txt
+            data_mind_3/spec/IMPLEMENTATION_STATUS_001.json
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          if-no-files-found: error
+          retention-days: 90
