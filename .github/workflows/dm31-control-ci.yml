@@ -1,0 +1,31 @@
+name: DATA MIND 3.1 adaptive control CI
+
+on:
+  push:
+    branches: [dm31-adaptive-creativity-control]
+    paths:
+      - '.github/workflows/dm31-control-ci.yml'
+      - 'data_mind_3/control/**'
+      - 'data_mind_3/metamath/**'
+      - 'data_mind_3/tests/**'
+      - 'run_dm3_metamath_target.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+      - name: Test DATA MIND 3.0 bridge and 3.1 adaptive control
+        run: |
+          PYTHONPATH=. pytest -q \
+            data_mind_3/tests/test_metamath_adapter.py \
+            data_mind_3/tests/test_adaptive_control.py

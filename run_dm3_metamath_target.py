@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from data_mind_3.control.controller import AdaptiveCreativityController
+from data_mind_3.control.experience import load_experience, save_experience
 from data_mind_3.metamath.parser import parse_database
 from data_mind_3.metamath.search import SearchConfig, search_target
 from data_mind_3.metamath.verifier import verify_with_brian_metamath
@@ -30,6 +32,13 @@ def main() -> int:
     ap.add_argument("--timeout", type=float, default=300.0)
     ap.add_argument("--result", type=Path, default=Path("dm3_metamath_result.json"))
     ap.add_argument("--historian", type=Path, default=Path("dm3_metamath_historian.jsonl"))
+    ap.add_argument("--adaptive-control", action="store_true",
+                    help="enable DATA MIND 3.1 error-driven 11D creativity control")
+    ap.add_argument("--control-interval", type=int, default=16)
+    ap.add_argument("--experience-in", type=Path, default=None,
+                    help="optional prior DATA MIND 3.1 control JSONL used to warm-start creativity")
+    ap.add_argument("--experience-out", type=Path, default=None,
+                    help="write DATA MIND 3.1 control updates as portable experience JSONL")
     args = ap.parse_args()
 
     db = parse_database(args.database)
@@ -55,9 +64,17 @@ def main() -> int:
         }
         return vr.accepted, meta
 
-    result = search_target(db, args.label, config, verifier_callback)
+    experience_rows = load_experience(args.experience_in) if args.adaptive_control else []
+    controller = (
+        AdaptiveCreativityController(interval=args.control_interval, experience=experience_rows)
+        if args.adaptive_control else None
+    )
+    result = search_target(db, args.label, config, verifier_callback, controller=controller)
+    if controller is not None:
+        save_experience(args.experience_out, controller.history)
+
     payload = {
-        "experiment": "DATA MIND 3 Metamath generalized adapter",
+        "experiment": "DATA MIND 3.1 adaptive Metamath adapter" if controller else "DATA MIND 3 Metamath generalized adapter",
         "target": args.label,
         "target_statement": " ".join(target.statement),
         "source_sha256": sha256(args.database),
@@ -71,6 +88,13 @@ def main() -> int:
         "reason": result.reason,
         "verification": result.verification,
         "config": config.__dict__,
+        "adaptive_control": {
+            "enabled": controller is not None,
+            "control_interval": args.control_interval if controller is not None else None,
+            "warm_start_rows": len(experience_rows),
+            "updates": len(controller.history) if controller is not None else 0,
+            "final_creativity": controller.creativity.to_dict() if controller is not None else None,
+        },
     }
     args.result.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     with args.historian.open("w", encoding="utf-8") as f:
