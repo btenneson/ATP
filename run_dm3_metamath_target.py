@@ -34,12 +34,17 @@ def main() -> int:
     ap.add_argument("--historian", type=Path, default=Path("dm3_metamath_historian.jsonl"))
     ap.add_argument("--adaptive-control", action="store_true",
                     help="enable DATA MIND 3.1 error-driven 11D creativity control")
+    ap.add_argument("--child-knob-play", action="store_true",
+                    help="let the child run reversible fine-tune and rare group-inverse trials over creativity knobs")
     ap.add_argument("--control-interval", type=int, default=16)
     ap.add_argument("--experience-in", type=Path, default=None,
                     help="optional prior DATA MIND 3.1 control JSONL used to warm-start creativity")
     ap.add_argument("--experience-out", type=Path, default=None,
                     help="write DATA MIND 3.1 control updates as portable experience JSONL")
     args = ap.parse_args()
+
+    if args.child_knob_play:
+        args.adaptive_control = True
 
     db = parse_database(args.database)
     target = db.target(args.label)
@@ -66,12 +71,35 @@ def main() -> int:
 
     experience_rows = load_experience(args.experience_in) if args.adaptive_control else []
     controller = (
-        AdaptiveCreativityController(interval=args.control_interval, experience=experience_rows)
+        AdaptiveCreativityController(
+            interval=args.control_interval,
+            experience=experience_rows,
+            child_play=args.child_knob_play,
+        )
         if args.adaptive_control else None
     )
     result = search_target(db, args.label, config, verifier_callback, controller=controller)
     if controller is not None:
         save_experience(args.experience_out, controller.history)
+
+    child_rows = []
+    if controller is not None:
+        child_rows = [
+            row for row in controller.history
+            if isinstance(row, dict) and row.get("actor") == "Child"
+        ]
+    inverse_trials = sum(
+        1 for row in child_rows
+        if row.get("action") == "knob_trial_start" and row.get("mode") == "group_inverse"
+    )
+    kept_trials = sum(
+        1 for row in child_rows
+        if row.get("action") == "knob_trial_result" and row.get("decision") == "keep"
+    )
+    rolled_back_trials = sum(
+        1 for row in child_rows
+        if row.get("action") == "knob_trial_result" and row.get("decision") == "rollback"
+    )
 
     payload = {
         "experiment": "DATA MIND 3.1 adaptive Metamath adapter" if controller else "DATA MIND 3 Metamath generalized adapter",
@@ -92,8 +120,13 @@ def main() -> int:
             "enabled": controller is not None,
             "control_interval": args.control_interval if controller is not None else None,
             "warm_start_rows": len(experience_rows),
-            "updates": len(controller.history) if controller is not None else 0,
+            "updates": sum(1 for row in controller.history if row.get("actor") == "CreativityController") if controller is not None else 0,
             "final_creativity": controller.creativity.to_dict() if controller is not None else None,
+            "child_knob_play": bool(args.child_knob_play),
+            "child_trial_starts": sum(1 for row in child_rows if row.get("action") == "knob_trial_start"),
+            "child_inverse_trials": inverse_trials,
+            "child_kept_trials": kept_trials,
+            "child_rolled_back_trials": rolled_back_trials,
         },
     }
     args.result.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
