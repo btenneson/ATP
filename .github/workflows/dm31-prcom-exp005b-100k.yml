@@ -1,0 +1,122 @@
+name: DATA MIND 3.1 Experiment 005B PRCOM 100K
+
+on:
+  push:
+    branches: [dm31-exp005b-100k]
+    paths:
+      - '.github/workflows/dm31-prcom-exp005b-100k.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prcom-100k:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Check out isolated Experiment 005B branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test runtime
+        run: python -m pip install --quiet pytest
+
+      - name: Test bridge and adaptive controller
+        run: |
+          PYTHONPATH=. pytest -q \
+            data_mind_3/tests/test_metamath_adapter.py \
+            data_mind_3/tests/test_adaptive_control.py
+
+      - name: Verify tiny calibration through independent verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python -u run_dm3_metamath_target.py data_mind_3/tests/mini.mm \
+            --label th --verifier metamath.py --candidate-cap 8 --max-expansions 20 \
+            --max-depth 8 --max-open 8 --timeout 30 \
+            --adaptive-control --control-interval 16 \
+            --result dm31_mini_result.json --historian dm31_mini_historian.jsonl \
+            --experience-out dm31_mini_experience.jsonl
+
+      - name: Download exact frozen historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --retry 3 --fail -o frozen_set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum frozen_set.mm | awk '{print $1}')" = \
+            "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Record immutable Experiment 005B manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "repo=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "branch=${GITHUB_REF_NAME}"
+            echo "target=prcom"
+            echo "experiment=DATA_MIND_3.1_Experiment_005B_100K"
+            echo "setmm_commit=cd577894d8e6bf8b4fe8014c0d525d531507e4b7"
+            echo "setmm_sha256=$(sha256sum frozen_set.mm | awk '{print $1}')"
+            echo "search_sha256=$(sha256sum data_mind_3/metamath/search.py | awk '{print $1}')"
+            echo "controller_sha256=$(sha256sum data_mind_3/control/controller.py | awk '{print $1}')"
+            echo "knobs_sha256=$(sha256sum data_mind_3/control/knobs.py | awk '{print $1}')"
+            echo "error_sha256=$(sha256sum data_mind_3/control/error.py | awk '{print $1}')"
+            echo "verifier_adapter_sha256=$(sha256sum data_mind_3/metamath/verifier.py | awk '{print $1}')"
+            echo "external_verifier_sha256=$(sha256sum metamath.py | awk '{print $1}')"
+            echo "candidate_cap=64"
+            echo "max_expansions=100000"
+            echo "max_depth=24"
+            echo "max_open=24"
+            echo "max_frontier=200000"
+            echo "timeout_s=1800"
+            echo "control_interval=16"
+            echo "initial_creativity=all_0.5"
+            echo "experience_in=NONE"
+            echo "only_scientific_change_from_exp005=max_expansions_20000_to_100000"
+          } | tee dm31_prcom_exp005b_manifest.txt
+
+      - name: Run frozen adaptive PRCOM search at 100K expansion cap
+        id: prcom
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          /usr/bin/time -f 'wall_seconds=%e\nmax_rss_kb=%M' -o dm31_prcom_exp005b.time \
+          env PYTHONPATH=. python -u run_dm3_metamath_target.py frozen_set.mm \
+            --label prcom --verifier metamath.py \
+            --candidate-cap 64 --max-expansions 100000 --max-depth 24 --max-open 24 \
+            --timeout 1800 --adaptive-control --control-interval 16 \
+            --experience-out dm31_prcom_exp005b_experience.jsonl \
+            --result dm31_prcom_exp005b_result.json \
+            --historian dm31_prcom_exp005b_historian.jsonl \
+            2>&1 | tee dm31_prcom_exp005b.log
+          RC=${PIPESTATUS[0]}
+          echo "runner_rc=${RC}" | tee dm31_prcom_exp005b.run.txt
+          cat dm31_prcom_exp005b.time | tee -a dm31_prcom_exp005b.run.txt
+          if [ "$RC" -ne 0 ] && [ "$RC" -ne 1 ]; then exit "$RC"; fi
+          exit 0
+
+      - name: Upload Experiment 005B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-mind-31-prcom-exp005b-100k-${{ github.run_id }}
+          path: |
+            data_mind_3/experiments/EXPERIMENT_005B_PRCOM_100K_FREEZE.md
+            dm31_mini_result.json
+            dm31_mini_historian.jsonl
+            dm31_mini_experience.jsonl
+            dm31_prcom_exp005b_manifest.txt
+            dm31_prcom_exp005b_result.json
+            dm31_prcom_exp005b_historian.jsonl
+            dm31_prcom_exp005b_experience.jsonl
+            dm31_prcom_exp005b.log
+            dm31_prcom_exp005b.time
+            dm31_prcom_exp005b.run.txt
+          if-no-files-found: warn
