@@ -1,0 +1,11 @@
+DATA MIND 3.1 Experiment 001 launch authorized by user on 2026-09-03.
+
+Experiment: Professor/Self-Awareness Frozen-20 Ablation
+Preregistered base commit: 38ffb06356f4a5eb0b7b2b8dbafc7370ffcea409
+Pair expansion budget: 100000 (50000 P1 + 50000 P2)
+Pair time budget: 1800 seconds (900 + 900)
+Official runtime claim: false; explicit research ablation
+Child play: disabled
+Common independent P2: enabled
+Frozen-20 benchmark lock: unchanged
+Canonical architecture snapshot: unchanged
