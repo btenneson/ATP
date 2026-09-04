@@ -1,0 +1,269 @@
+name: DATA MIND 3.1 Experiment 002 Professor Cadence Frozen-20
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/dm31-exp002-professor-cadence-frozen20
+    paths:
+      - data_mind_3/experiments/EXPERIMENT_002_LAUNCH
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SETMM_SHA256: 19cb1ec229f3f11e36ff439a6381878864d9f2d4906f20fc9401346b309894e3
+
+jobs:
+  preflight:
+    name: cadence-ablation preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+      - name: Confirm frozen architecture and benchmark lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          python experiments/dm31_architecture_preflight.py --mode report | tee dm31_exp002_architecture_report.json
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          lock=json.load(open('benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json'))
+          runtime=json.load(open('data_mind_3/spec/RUNTIME_CONFIG_001.json'))
+          snap=Path('data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md')
+          actual=hashlib.sha256(snap.read_bytes()).hexdigest()
+          assert actual==lock['architecture_snapshot_sha256']
+          assert runtime['architecture_snapshot_sha256']==actual
+          assert runtime['status']=='UNRESOLVED_DO_NOT_RUN_OFFICIAL'
+          print('EXPERIMENT_002_RESEARCH_ABLATION_GATE=PASS')
+          PY
+      - name: Test unchanged Professor/reflective/search interfaces
+        run: |
+          pytest -q \
+            data_mind_3/tests/test_adaptive_control.py \
+            data_mind_3/tests/test_professor_reflective_interfaces.py \
+            data_mind_3/tests/test_reflective_p1_runtime.py \
+            data_mind_3/tests/test_metamath_adapter.py
+      - name: Compile and self-test cadence treatments
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile experiments/dm31_exp002_lane.py experiments/dm31_exp002_summarize.py
+          python - <<'PY'
+          from types import SimpleNamespace
+          from experiments.dm31_exp002_lane import (
+              EventTriggeredReflectiveP1Controller,
+              controller_for,
+          )
+          assert controller_for('c16',271828).interval == 16
+          assert controller_for('c64',271828).interval == 64
+          assert controller_for('c256',271828).interval == 256
+          c=EventTriggeredReflectiveP1Controller()
+          base=SimpleNamespace(
+              candidate_cap=64,
+              match_cap_per_candidate=12,
+              free_var_completion_cap=24,
+              max_depth=24,
+          )
+          last=None
+          for i in range(1,129):
+              last=c.observe_expansion(
+                  expansion=i,
+                  generated_total=2*i,
+                  frontier=i,
+                  max_frontier=200000,
+                  elapsed=float(i),
+                  timeout=900.0,
+                  partial_credit=0.20,
+                  relevance=0.50,
+                  base_config=base,
+              )
+          assert last is not None
+          assert c.professor_updates == 1
+          assert c.event_interventions[0]['expansion'] == 128
+          assert 'bootstrap' in c.event_interventions[0]['reasons']
+          print('EXPERIMENT_002_CADENCE_SELFTEST=PASS')
+          PY
+
+  prepare-split:
+    name: reconstruct and hash-check frozen 95/5 split
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+      - name: Reconstruct identical proof-free split metadata
+        run: |
+          mkdir -p split_meta
+          python -u experiments/dm31_exp001_prepare_split.py \
+            --setmm set.mm \
+            --out-labels split_meta/holdout_labels.txt \
+            --out-summary split_meta/split_summary.json
+      - name: Upload proof-free split metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp002-split-${{ github.run_id }}
+          path: split_meta/
+          if-no-files-found: error
+          retention-days: 90
+
+  settle:
+    name: cadence target ${{ matrix.ordinal }}
+    needs: [preflight, prepare-split]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        ordinal: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download proof-free frozen split metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: dm31-exp002-split-${{ github.run_id }}
+          path: split_meta
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+      - name: Run fixed Professor-off P1 control
+        run: |
+          set -euo pipefail
+          root="exp002_results/target-${{ matrix.ordinal }}"; mkdir -p "$root"
+          timeout --signal=TERM --kill-after=30s 1000s python -u experiments/dm31_exp002_lane.py \
+            --mode off --target-ordinal '${{ matrix.ordinal }}' --setmm set.mm \
+            --holdout-labels split_meta/holdout_labels.txt --out "$root/off" \
+            2>&1 | tee "$root/off.console.log"
+      - name: Run common independent P2 lane
+        run: |
+          set -euo pipefail
+          root="exp002_results/target-${{ matrix.ordinal }}"
+          timeout --signal=TERM --kill-after=30s 1000s python -u experiments/dm31_exp002_lane.py \
+            --mode p2 --target-ordinal '${{ matrix.ordinal }}' --setmm set.mm \
+            --holdout-labels split_meta/holdout_labels.txt --out "$root/p2" \
+            2>&1 | tee "$root/p2.console.log"
+      - name: Run Professor cadence 16
+        run: |
+          set -euo pipefail
+          root="exp002_results/target-${{ matrix.ordinal }}"
+          timeout --signal=TERM --kill-after=30s 1000s python -u experiments/dm31_exp002_lane.py \
+            --mode c16 --target-ordinal '${{ matrix.ordinal }}' --setmm set.mm \
+            --holdout-labels split_meta/holdout_labels.txt --out "$root/c16" \
+            2>&1 | tee "$root/c16.console.log"
+      - name: Run Professor cadence 64
+        run: |
+          set -euo pipefail
+          root="exp002_results/target-${{ matrix.ordinal }}"
+          timeout --signal=TERM --kill-after=30s 1000s python -u experiments/dm31_exp002_lane.py \
+            --mode c64 --target-ordinal '${{ matrix.ordinal }}' --setmm set.mm \
+            --holdout-labels split_meta/holdout_labels.txt --out "$root/c64" \
+            2>&1 | tee "$root/c64.console.log"
+      - name: Run Professor cadence 256
+        run: |
+          set -euo pipefail
+          root="exp002_results/target-${{ matrix.ordinal }}"
+          timeout --signal=TERM --kill-after=30s 1000s python -u experiments/dm31_exp002_lane.py \
+            --mode c256 --target-ordinal '${{ matrix.ordinal }}' --setmm set.mm \
+            --holdout-labels split_meta/holdout_labels.txt --out "$root/c256" \
+            2>&1 | tee "$root/c256.console.log"
+      - name: Run event-triggered Professor with cooldown
+        run: |
+          set -euo pipefail
+          root="exp002_results/target-${{ matrix.ordinal }}"
+          timeout --signal=TERM --kill-after=30s 1000s python -u experiments/dm31_exp002_lane.py \
+            --mode event --target-ordinal '${{ matrix.ordinal }}' --setmm set.mm \
+            --holdout-labels split_meta/holdout_labels.txt --out "$root/event" \
+            2>&1 | tee "$root/event.console.log"
+      - name: Validate target records
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="exp002_results/target-${{ matrix.ordinal }}"
+          python - "$root" <<'PY'
+          import json, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          rows={}
+          for mode in ('off','p2','c16','c64','c256','event'):
+              p=root/mode/'result.json'
+              assert p.exists(), p
+              row=json.loads(p.read_text())
+              rows[mode]=row
+              assert row['official_runtime_claim'] is False
+              assert row['controller']['child_play'] is False
+              if row['status']=='PROVED':
+                  assert row['verification']['accepted'] is True
+          assert rows['off']['reflective_p1']['enabled'] is False
+          assert rows['p2']['reflective_p1']['enabled'] is False
+          assert rows['c16']['controller']['control_interval'] == 16
+          assert rows['c64']['controller']['control_interval'] == 64
+          assert rows['c256']['controller']['control_interval'] == 256
+          assert rows['event']['event_policy']['enabled'] is True
+          print('EXPERIMENT_002_TARGET_RECORD_GATE=PASS')
+          PY
+      - name: Upload target evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp002-target-${{ matrix.ordinal }}-${{ github.run_id }}
+          path: exp002_results/
+          if-no-files-found: warn
+          retention-days: 90
+
+  summarize:
+    name: summarize Experiment 002
+    if: always()
+    needs: [preflight, prepare-split, settle]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download target evidence
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: dm31-exp002-target-*-${{ github.run_id }}
+          path: collected
+          merge-multiple: true
+      - name: Build verifier-first cadence summary
+        run: |
+          python experiments/dm31_exp002_summarize.py \
+            --root collected \
+            --out dm31_exp002_summary.json
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp002-summary-${{ github.run_id }}
+          path: |
+            dm31_exp002_summary.json
+            data_mind_3/experiments/EXPERIMENT_002_PROFESSOR_CADENCE_FROZEN20.md
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          retention-days: 90
