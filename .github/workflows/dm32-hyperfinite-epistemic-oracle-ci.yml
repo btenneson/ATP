@@ -3,7 +3,9 @@ name: DATA MIND 3.2 Hyperfinite Epistemic Oracle Interface CI
 
 on:
   push:
-    branches: [dm32-hyperfinite-epistemic-oracle]
+    branches:
+      - dm32-hyperfinite-epistemic-oracle
+      - dm32-oracle-atp-ifs-abel
     paths:
       - 'data_mind_3_2/**'
       - '.github/workflows/dm32-hyperfinite-epistemic-oracle-ci.yml'
@@ -21,9 +23,11 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install --quiet pytest
-      - name: Test finite proxy, oracle isolation, and AMLD awareness routing
+      - name: Test finite proxy, oracle isolation, awareness routing, IFS, and Abel telemetry
         run: |
-          PYTHONPATH=. pytest -q data_mind_3_2/tests/test_hyperfinite_oracle.py
+          PYTHONPATH=. pytest -q \
+            data_mind_3_2/tests/test_hyperfinite_oracle.py \
+            data_mind_3_2/tests/test_oracle_atp_dynamics.py
 
       - name: Recheck inherited DATA MIND 3.1 control interfaces
         run: |
