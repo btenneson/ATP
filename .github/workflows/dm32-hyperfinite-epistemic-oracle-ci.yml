@@ -1,0 +1,32 @@
+# Architecture/runtime CI only. This is not a scientific experiment.
+name: DATA MIND 3.2 Hyperfinite Epistemic Oracle Interface CI
+
+on:
+  push:
+    branches: [dm32-hyperfinite-epistemic-oracle]
+    paths:
+      - 'data_mind_3_2/**'
+      - '.github/workflows/dm32-hyperfinite-epistemic-oracle-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-epistemic-oracle-interface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+      - name: Test finite proxy, oracle isolation, and AMLD awareness routing
+        run: |
+          PYTHONPATH=. pytest -q data_mind_3_2/tests/test_hyperfinite_oracle.py
+
+      - name: Recheck inherited DATA MIND 3.1 control interfaces
+        run: |
+          PYTHONPATH=. pytest -q \
+            data_mind_3/tests/test_professor_reflective_interfaces.py \
+            data_mind_3/tests/test_adaptive_control.py
