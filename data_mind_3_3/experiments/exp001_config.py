@@ -30,8 +30,11 @@ ARM_ACCESS_BITS = {
 
 CONTROL_INTERVAL = 16
 PROFESSOR_INTERVAL = 256
-MAX_EXPANSIONS = 20_000
-TIMEOUT_S = 300.0
+# Frozen-20's permanent evaluation protocol gives each target 1800 seconds.
+# The expansion cap is a common 3.3 safety cap; the time budget remains the
+# canonical scientific budget and is not shortened for convenience.
+MAX_EXPANSIONS = 100_000
+TIMEOUT_S = 1800.0
 CANDIDATE_CAP = 64
 MAX_DEPTH = 24
 MAX_OPEN_GOALS = 24
