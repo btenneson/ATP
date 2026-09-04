@@ -45,6 +45,10 @@ class ShadowDreamerController:
     invoked only after the base controller emits a genuine control-update event.
     Every dream is immediately closed without promotion, so this wrapper cannot
     alter the search trajectory or verifier/BANK behavior.
+
+    With `dreamer_enabled=False`, observe_expansion returns the base controller's
+    result *unchanged* and performs no Dreamer/oracle/FUTUREBANK work.  This is
+    the explicit DATA MIND 3.3 OFF-control invariant path.
     """
 
     def __init__(
@@ -54,6 +58,7 @@ class ShadowDreamerController:
         *,
         target_id: str,
         facets: Sequence[OracleFacet] = ALL_ORACLE_FACETS,
+        dreamer_enabled: bool = True,
     ) -> None:
         if not target_id:
             raise ValueError("target_id must be nonempty")
@@ -61,11 +66,10 @@ class ShadowDreamerController:
         self.dreamer = dreamer
         self.target_id = target_id
         self.facets = tuple(facets)
+        self.dreamer_enabled = bool(dreamer_enabled)
         self.shadow_history: list[ShadowDreamRecord] = []
 
     def __getattr__(self, name: str) -> Any:
-        # Search scoring, effective controls, creativity state and goal choice all
-        # remain owned by the inherited controller.
         return getattr(self.base_controller, name)
 
     def observe_expansion(
@@ -92,8 +96,8 @@ class ShadowDreamerController:
             relevance=relevance,
             base_config=base_config,
         )
-        if event is None:
-            return None
+        if event is None or not self.dreamer_enabled:
+            return event
 
         raw_error = event.get("error", {}) if isinstance(event, dict) else {}
         control_error = {
@@ -139,8 +143,6 @@ class ShadowDreamerController:
             synthesize=synthesize_typed_dream,
         )
 
-        # Hard shadow-mode invariant: never request promotion, regardless of the
-        # Dreamer's configured promotion throttle.
         self.dreamer.close_transaction(
             txid,
             request_promotion=False,
@@ -174,8 +176,6 @@ def build_shadow_dreamer(
     access: OracleAccessMask | None = None,
     throttles: dict[OracleFacet, OracleThrottle] | None = None,
 ) -> LogicalDreamer:
-    """Install the first finite four-oracle Dreamer in promotion-disabled mode."""
-
     return LogicalDreamer(
         default_oracle_interfaces(),
         access=access or OracleAccessMask.from_bits((1, 1, 1, 1)),
@@ -193,19 +193,15 @@ def search_target_with_shadow_dreamer(
     verify_candidate: Callable | None = None,
     controller: object | None = None,
     dreamer: LogicalDreamer | None = None,
+    dreamer_enabled: bool = True,
 ) -> tuple[SearchResult, ShadowDreamerController]:
-    """Run the ordinary Metamath search with non-causal 3.3 Dreamer telemetry.
-
-    This is architecture instrumentation, not a scientific experiment.  The
-    returned wrapper exposes shadow_history and Dreamer reflection for audit.
-    """
-
     base = controller or AdaptiveCreativityController()
     installed = dreamer or build_shadow_dreamer()
     wrapper = ShadowDreamerController(
         base,
         installed,
         target_id=target_label,
+        dreamer_enabled=dreamer_enabled,
     )
     result = search_target(
         db,
