@@ -1,0 +1,251 @@
+name: DATA MIND 3.1 Experiment 001 Professor Self-Awareness Frozen-20
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/dm31-exp001-professor-selfawareness-frozen20
+    paths:
+      - data_mind_3/experiments/EXPERIMENT_001_LAUNCH
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SETMM_SHA256: 19cb1ec229f3f11e36ff439a6381878864d9f2d4906f20fc9401346b309894e3
+
+jobs:
+  preflight:
+    name: research-ablation preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+      - name: Confirm frozen snapshot and unresolved-official status
+        shell: bash
+        run: |
+          set -euo pipefail
+          python experiments/dm31_architecture_preflight.py --mode report | tee dm31_exp001_architecture_report.json
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          lock=json.load(open('benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json'))
+          runtime=json.load(open('data_mind_3/spec/RUNTIME_CONFIG_001.json'))
+          snap=Path('data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md')
+          actual=hashlib.sha256(snap.read_bytes()).hexdigest()
+          assert actual==lock['architecture_snapshot_sha256']
+          assert runtime['architecture_snapshot_sha256']==actual
+          assert runtime['status']=='UNRESOLVED_DO_NOT_RUN_OFFICIAL'
+          print('EXPERIMENT_001_RESEARCH_ABLATION_GATE=PASS')
+          PY
+      - name: Test Professor/reflective interfaces
+        run: |
+          pytest -q \
+            data_mind_3/tests/test_adaptive_control.py \
+            data_mind_3/tests/test_professor_reflective_interfaces.py \
+            data_mind_3/tests/test_reflective_p1_runtime.py \
+            data_mind_3/tests/test_metamath_adapter.py
+      - name: Test Experiment 001 deterministic partner and shadow measurement
+        shell: bash
+        run: |
+          python - <<'PY'
+          import math
+          from experiments.dm31_exp001_lane import p2_creativity, shadow_professor
+          c=p2_creativity(271828).to_dict()
+          expected={
+            'lemma_direction':0.592296,
+            'search_breadth':0.736838,
+            'search_depth':0.704512,
+            'heuristic_weighting':0.444473,
+            'term_ordering':0.703784,
+            'goal_selection':0.586104,
+            'node_selection':0.675007,
+            'divergence':0.253289,
+            'abstraction_level':0.256563,
+            'risk_tolerance':0.357390,
+            'resource_bias':0.395406,
+          }
+          for k,v in expected.items():
+              assert math.isclose(c[k],v,abs_tol=5e-7), (k,c[k],v)
+          rows=[
+            {'actor':'Search','action':'expand','expansion':1,'pc':0.2,'target_relevance':0.4},
+            {'actor':'Search','action':'expand','expansion':16,'pc':0.25,'target_relevance':0.5},
+          ]
+          summary,samples=shadow_professor(rows)
+          assert summary['measurement_only'] is True
+          assert summary['search_influence'] is False
+          assert len(samples)==2
+          assert samples[1]['professor_credit'] > samples[0]['professor_credit']
+          print('EXPERIMENT_001_MECHANISM_SELFTEST=PASS')
+          PY
+
+  prepare-split:
+    name: reconstruct and hash-check frozen 95/5 split
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+      - name: Reconstruct split in proof-aware preparation process
+        run: |
+          mkdir -p split_meta
+          python -u experiments/dm31_exp001_prepare_split.py \
+            --setmm set.mm \
+            --out-labels split_meta/holdout_labels.txt \
+            --out-summary split_meta/split_summary.json
+      - name: Upload proof-free split metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp001-split-${{ github.run_id }}
+          path: split_meta/
+          if-no-files-found: error
+          retention-days: 90
+
+  settle:
+    name: frozen target ${{ matrix.ordinal }}
+    needs: [preflight, prepare-split]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        ordinal: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download proof-free frozen split metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: dm31-exp001-split-${{ github.run_id }}
+          path: split_meta
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+      - name: Run Arm A P1 and derive Arm B shadow Professor
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          mkdir -p "$root"
+          timeout --signal=TERM --kill-after=30s 1000s \
+            python -u experiments/dm31_exp001_lane.py \
+              --mode a-p1 \
+              --target-ordinal '${{ matrix.ordinal }}' \
+              --setmm set.mm \
+              --holdout-labels split_meta/holdout_labels.txt \
+              --out "$root/a-p1" \
+            2>&1 | tee "$root/a-p1.console.log"
+      - name: Run common independent P2 control lane
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          timeout --signal=TERM --kill-after=30s 1000s \
+            python -u experiments/dm31_exp001_lane.py \
+              --mode p2 \
+              --target-ordinal '${{ matrix.ordinal }}' \
+              --setmm set.mm \
+              --holdout-labels split_meta/holdout_labels.txt \
+              --out "$root/p2" \
+            2>&1 | tee "$root/p2.console.log"
+      - name: Run Arm C active Professor/self-aware P1
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          timeout --signal=TERM --kill-after=30s 1000s \
+            python -u experiments/dm31_exp001_lane.py \
+              --mode c-p1 \
+              --target-ordinal '${{ matrix.ordinal }}' \
+              --setmm set.mm \
+              --holdout-labels split_meta/holdout_labels.txt \
+              --out "$root/c-p1" \
+            2>&1 | tee "$root/c-p1.console.log"
+      - name: Validate target records
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          python - "$root" <<'PY'
+          import json, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          rows={}
+          for lane in ('a-p1','p2','c-p1'):
+              p=root/lane/'result.json'
+              assert p.exists(), p
+              rows[lane]=json.loads(p.read_text())
+              assert rows[lane]['official_runtime_claim'] is False
+              assert rows[lane]['controller']['child_play'] is False
+              if rows[lane]['status']=='PROVED':
+                  assert rows[lane]['verification']['accepted'] is True
+          shadow=rows['a-p1']['shadow_professor']
+          assert shadow['measurement_only'] is True
+          assert shadow['search_influence'] is False
+          assert rows['c-p1']['reflective_p1']['enabled'] is True
+          assert rows['p2']['reflective_p1']['enabled'] is False
+          print('TARGET_RECORD_GATE=PASS')
+          PY
+      - name: Upload target evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp001-target-${{ matrix.ordinal }}-${{ github.run_id }}
+          path: exp001_results/
+          if-no-files-found: warn
+          retention-days: 90
+
+  summarize:
+    name: summarize Experiment 001
+    if: always()
+    needs: [preflight, prepare-split, settle]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download target evidence
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: dm31-exp001-target-*-${{ github.run_id }}
+          path: collected
+          merge-multiple: true
+      - name: Build verifier-first summary
+        run: |
+          python experiments/dm31_exp001_summarize.py \
+            --root collected \
+            --out dm31_exp001_summary.json
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp001-summary-${{ github.run_id }}
+          path: |
+            dm31_exp001_summary.json
+            data_mind_3/experiments/EXPERIMENT_001_PROFESSOR_SELF_AWARENESS_FROZEN20.md
+            data_mind_3/spec/DATA_MIND_3_1_CANONICAL_ARCHITECTURE_SNAPSHOT_001.md
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          retention-days: 90
