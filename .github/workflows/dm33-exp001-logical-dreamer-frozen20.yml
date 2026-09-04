@@ -1,0 +1,248 @@
+name: DATA MIND 3.3 Experiment 001 Logical Dreamer Frozen-20
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - data-mind-3.3-logical-dreamer
+    paths:
+      - data_mind_3_3/experiments/EXPERIMENT_001_LAUNCH
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SETMM_SHA256: 19cb1ec229f3f11e36ff439a6381878864d9f2d4906f20fc9401346b309894e3
+
+jobs:
+  preflight:
+    name: frozen architecture and preregistration gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+
+      - name: Require exact frozen blobs and preregistration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json)" = "2725ae80c22bf0dd74a38ed1ba4ffb21a7ad7b9c"
+          test "$(git hash-object data_mind_3_3/oracles.py)" = "2342bba42523a00787c1c0d0888001a599e2e4c4"
+          test "$(git hash-object data_mind_3_3/experiments/exp001_config.py)" = "b9c2fb7af257d7d693deb8c9e4bfd775d17cfb24"
+          test "$(git hash-object data_mind_3_3/promotion.py)" = "c2d8b5c7092ea0b6b24f583cd6a714b58d85f3ac"
+          test "$(git hash-object data_mind_3_3/metamath/causal_bridge.py)" = "043c4e1f0e3f510620bf7967edad57684c5e6eba"
+          test "$(git hash-object data_mind_3/control/reflective.py)" = "5227de6409f0008257f6eb11a579d387ae261df6"
+          test -f data_mind_3_3/ORACLE_SEMANTICS_FROZEN_001.md
+          test -f data_mind_3_3/experiments/EXPERIMENT_001_LOGICAL_DREAMER_FROZEN20.md
+          echo EXP001_FROZEN_BLOB_GATE=PASS
+
+      - name: Compile scientific runner and summarizer
+        run: |
+          python -m py_compile \
+            data_mind_3_3/experiments/prepare_frozen20_split.py \
+            data_mind_3_3/experiments/exp001_config.py \
+            data_mind_3_3/experiments/exp001_lane.py \
+            data_mind_3_3/experiments/exp001_summarize.py
+
+      - name: Recheck Dreamer, promotion, OFF invariant, Professor throttle and independent-verifier smoke path
+        run: |
+          pytest -q \
+            data_mind_3_3/tests/test_logical_dreamer.py \
+            data_mind_3_3/tests/test_dreamer_shadow_bridge.py \
+            data_mind_3_3/tests/test_causal_promotion_bridge.py \
+            data_mind_3_3/tests/test_end_to_end_smoke.py \
+            data_mind_3/tests/test_professor_reflective_interfaces.py
+
+      - name: Assert exact Experiment 001 constants
+        run: |
+          python - <<'PY'
+          from data_mind_3_3.experiments import exp001_config as c
+          assert c.ARMS == ('off','placebo-o3','o3','o34','o1234')
+          assert c.ARM_ACCESS_BITS['off'] == (0,0,0,0)
+          assert c.ARM_ACCESS_BITS['placebo-o3'] == (0,0,1,0)
+          assert c.ARM_ACCESS_BITS['o3'] == (0,0,1,0)
+          assert c.ARM_ACCESS_BITS['o34'] == (0,0,1,1)
+          assert c.ARM_ACCESS_BITS['o1234'] == (1,1,1,1)
+          assert c.EXPERIMENT_SEED == 330001
+          assert c.CONTROL_INTERVAL == 16
+          assert c.PROFESSOR_INTERVAL == 256
+          assert c.MAX_EXPANSIONS == 100000
+          assert c.TIMEOUT_S == 1800.0
+          assert c.CANDIDATE_CAP == 64
+          assert c.MAX_DEPTH == 24
+          assert c.MAX_OPEN_GOALS == 24
+          assert c.MAX_FRONTIER == 200000
+          assert c.PROMOTION_THROTTLE.max_promotions == 64
+          assert c.PROMOTION_THROTTLE.min_steps_between_promotions == 64
+          print('EXP001_CONFIG_GATE=PASS')
+          PY
+
+  prepare-split:
+    name: reconstruct proof-free Frozen-20 split
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+      - name: Reconstruct and hash-check split without emitting held-out proofs
+        run: |
+          mkdir -p split_meta
+          python -u data_mind_3_3/experiments/prepare_frozen20_split.py \
+            --setmm set.mm \
+            --out-labels split_meta/holdout_labels.txt \
+            --out-summary split_meta/split_summary.json
+      - name: Upload proof-free split metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm33-exp001-split-${{ github.run_id }}
+          path: split_meta/
+          if-no-files-found: error
+          retention-days: 90
+
+  settle:
+    name: target ${{ matrix.ordinal }} five-arm mechanism study
+    needs: [preflight, prepare-split]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        ordinal: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download proof-free split metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: dm33-exp001-split-${{ github.run_id }}
+          path: split_meta
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+
+      - name: Run five frozen arms in fresh settlement processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          mkdir -p "$root"
+          for arm in off placebo-o3 o3 o34 o1234; do
+            mkdir -p "$root/$arm"
+            echo "=== EXP001 target ${{ matrix.ordinal }} arm $arm ==="
+            timeout --signal=TERM --kill-after=30s 1980s \
+              python -u data_mind_3_3/experiments/exp001_lane.py \
+                --arm "$arm" \
+                --target-ordinal '${{ matrix.ordinal }}' \
+                --setmm set.mm \
+                --holdout-labels split_meta/holdout_labels.txt \
+                --verifier metamath.py \
+                --out "$root/$arm" \
+              2>&1 | tee "$root/$arm.console.log"
+          done
+
+      - name: Validate all five scientific records
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          python - "$root" <<'PY'
+          import json, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          expected={
+              'off':(0,0,0,0),
+              'placebo-o3':(0,0,1,0),
+              'o3':(0,0,1,0),
+              'o34':(0,0,1,1),
+              'o1234':(1,1,1,1),
+          }
+          for arm,bits in expected.items():
+              path=root/arm/'result.json'
+              assert path.exists(), path
+              row=json.loads(path.read_text())
+              assert row['scientific_run'] is True
+              assert row['arm']==arm
+              assert tuple(row['dreamer']['access_bits'])==bits
+              assert row['oracle_semantics']=='ORACLE_SEMANTICS_FROZEN_001'
+              assert row['benchmark_lock_git_blob']=='2725ae80c22bf0dd74a38ed1ba4ffb21a7ad7b9c'
+              assert row['controller']['child_play'] is False
+              assert row['controller']['professor_interval']==256
+              assert row['search_config']['timeout_s']==1800.0
+              if row['status']=='PROVED':
+                  assert row['verification']['accepted'] is True
+              if arm=='off':
+                  assert row['dreamer']['enabled'] is False
+                  assert row['resource_accounting']['oracle_calls']==0
+                  assert row['resource_accounting']['dreamer_proposals']==0
+                  assert row['resource_accounting']['promotions_granted']==0
+          print('EXP001_TARGET_RECORD_GATE=PASS')
+          PY
+
+      - name: Upload target evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm33-exp001-target-${{ matrix.ordinal }}-${{ github.run_id }}
+          path: exp001_results/
+          if-no-files-found: warn
+          retention-days: 90
+
+  summarize:
+    name: verifier-first Experiment 001 summary
+    if: always()
+    needs: [preflight, prepare-split, settle]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all target evidence that exists
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: dm33-exp001-target-*-${{ github.run_id }}
+          path: collected
+          merge-multiple: true
+      - name: Build preregistered verifier-first summary
+        run: |
+          python data_mind_3_3/experiments/exp001_summarize.py \
+            --root collected \
+            --out dm33_exp001_summary.json
+      - name: Upload summary and frozen specification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm33-exp001-summary-${{ github.run_id }}
+          path: |
+            dm33_exp001_summary.json
+            data_mind_3_3/experiments/EXPERIMENT_001_LOGICAL_DREAMER_FROZEN20.md
+            data_mind_3_3/ORACLE_SEMANTICS_FROZEN_001.md
+            data_mind_3_3/experiments/exp001_config.py
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          retention-days: 90
