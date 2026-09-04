@@ -1,4 +1,4 @@
-# launch-trigger: 2026-09-03T21:46:00-07:00
+# launch-trigger: 2026-09-04T09:00:00-07:00
 name: DATA MIND 3.1 Experiment -003 Ocean-150 Professional ATPs
 
 on:
@@ -181,6 +181,8 @@ jobs:
 
       - name: Run all seven Experiment -003 lanes with equal 1800-second caps
         shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           set -euo pipefail
           SEED='${{ matrix.seed }}'
