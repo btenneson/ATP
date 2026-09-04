@@ -1,4 +1,5 @@
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +13,7 @@ from data_mind_3.control.futurebank import (
     TransactionalFutureBank,
 )
 from data_mind_3.control.professor import Professor, ProfessorEvidence
+from data_mind_3.control.reflective import ReflectiveP1Controller
 
 
 def test_eight_agents_one_professor_facing_self_aware_member_per_couple():
@@ -78,3 +80,38 @@ def test_escape_menu_exposes_budget_and_stagnation_responses():
         EscapeAction.FALLBACK,
     }
     assert set(EscapeAction) == expected
+
+
+def test_reflective_controller_throttles_actual_professor_deliver_calls():
+    controller = ReflectiveP1Controller(
+        interval=16,
+        professor_interval=16,
+        child_play=False,
+    )
+    base = SimpleNamespace(
+        candidate_cap=64,
+        match_cap_per_candidate=8,
+        free_var_completion_cap=64,
+        max_depth=24,
+    )
+
+    events = []
+    for expansion in range(1, 33):
+        event = controller.observe_expansion(
+            expansion=expansion,
+            generated_total=expansion * 4,
+            frontier=10,
+            max_frontier=1000,
+            elapsed=float(expansion),
+            timeout=1000.0,
+            partial_credit=0.25,
+            relevance=0.5,
+            base_config=base,
+        )
+        if event is not None:
+            events.append(event)
+
+    assert controller.actual_professor_calls == 2
+    assert controller.professor_updates == 2
+    assert [e["expansion"] for e in events] == [16, 32]
+    assert all(e["actual_professor_call"] is True for e in events)
