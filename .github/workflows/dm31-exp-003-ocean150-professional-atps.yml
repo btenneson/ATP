@@ -1,0 +1,269 @@
+name: DATA MIND 3.1 Experiment -003 Ocean-150 Professional ATPs
+
+on:
+  push:
+    branches:
+      - experiment/dm31-exp-003-ocean150-professional-atps-run
+    paths:
+      - '.github/workflows/dm31-exp-003-ocean150-professional-atps.yml'
+  workflow_dispatch:
+
+jobs:
+  seed:
+    name: Ocean-150 seed ${{ matrix.seed }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 210
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        seed: [90315001, 90315002, 90315003, 90315004, 90315005, 90315006, 90315007, 90315008, 90315009, 90315010]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate one frozen Ocean-150 instance and independently check L*
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "benchmarks/ocean/exp_003/generated/${{ matrix.seed }}"
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          from benchmarks.ocean.generate_ocean_tptp import make_ocean, bfs_distance, write_tptp
+          seed = int('${{ matrix.seed }}')
+          g = make_ocean(150, seed)
+          d = bfs_distance(g)
+          if d != 150:
+              raise SystemExit(f'ground-truth failure: seed={seed} BFS={d}')
+          out = Path('benchmarks/ocean/exp_003/generated') / str(seed)
+          p = out / f'ocean_L150_seed{seed}.p'
+          write_tptp(g, p)
+          sha = hashlib.sha256(p.read_bytes()).hexdigest()
+          (out / 'generation.json').write_text(json.dumps({
+              'seed': seed, 'Lstar': 150, 'bfs_verified_Lstar': d,
+              'vertices': len(g['nodes']), 'edges': len(g['edges']),
+              'source': g['source'], 'target': g['target'],
+              'problem_sha256': sha,
+          }, indent=2), encoding='utf-8')
+          print((out / 'generation.json').read_text())
+          PY
+
+      - name: Install common tools and SPASS
+        id: install_spass
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y spass build-essential git cmake jq gawk curl unzip
+          SPASS -h 2>&1 | head -20 || true
+
+      - name: Build official E Prover 3.2.5
+        id: install_e
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL 'https://wwwlehre.dhbw-stuttgart.de/~sschulz/WORK/E_DOWNLOAD/V_3.2/E.tgz' -o "$RUNNER_TEMP/E.tgz"
+          tar -xzf "$RUNNER_TEMP/E.tgz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/E"
+          ./configure
+          make rebuild
+          EPROVER_BIN="$RUNNER_TEMP/E/PROVER/eprover"
+          test -x "$EPROVER_BIN"
+          echo "EPROVER_BIN=$EPROVER_BIN" >> "$GITHUB_ENV"
+          "$EPROVER_BIN" --version
+
+      - name: Install Vampire 5.0.1
+        id: install_vampire
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vampire"
+          python - <<'PY'
+          import json, os, pathlib, urllib.request
+          url='https://api.github.com/repos/vprover/vampire/releases/tags/v5.0.1'
+          req=urllib.request.Request(url,headers={'Accept':'application/vnd.github+json','User-Agent':'dm31-exp-003'})
+          rel=json.load(urllib.request.urlopen(req))
+          assets=rel.get('assets',[])
+          def rank(a):
+              n=a['name'].lower()
+              linux='linux' in n
+              x86=any(x in n for x in ('x86_64','x86-64','amd64','x64'))
+              source=any(x in n for x in ('source','src'))
+              return (linux and x86 and not source, linux and not source, not source)
+          candidates=sorted(assets,key=rank,reverse=True)
+          if not candidates or not rank(candidates[0])[1]:
+              raise SystemExit('No suitable Linux Vampire 5.0.1 asset found')
+          a=candidates[0]
+          dest=pathlib.Path(os.environ['RUNNER_TEMP'])/'vampire'/a['name']
+          urllib.request.urlretrieve(a['browser_download_url'],dest)
+          print('Downloaded',a['name'])
+          PY
+          ASSET=$(find "$RUNNER_TEMP/vampire" -maxdepth 1 -type f | head -1)
+          case "$ASSET" in
+            *.tar.gz|*.tgz) tar -xzf "$ASSET" -C "$RUNNER_TEMP/vampire" ;;
+            *.tar.xz) tar -xJf "$ASSET" -C "$RUNNER_TEMP/vampire" ;;
+            *.zip) unzip -q "$ASSET" -d "$RUNNER_TEMP/vampire" ;;
+            *) chmod +x "$ASSET" ;;
+          esac
+          VAMPIRE_BIN=$(find "$RUNNER_TEMP/vampire" -type f \( -name 'vampire' -o -name 'vampire*' \) -not -name '*.tar*' -not -name '*.zip' | head -1)
+          test -n "$VAMPIRE_BIN"
+          chmod +x "$VAMPIRE_BIN"
+          echo "VAMPIRE_BIN=$VAMPIRE_BIN" >> "$GITHUB_ENV"
+          "$VAMPIRE_BIN" --version || "$VAMPIRE_BIN" -h | head || true
+
+      - name: Install iProver upstream master build artifact
+        id: install_iprover
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/iprover"
+          git ls-remote https://gitlab.com/korovin/iprover.git HEAD | tee "$RUNNER_TEMP/iprover/upstream_head.txt"
+          curl -fL 'https://gitlab.com/korovin/iprover/-/jobs/artifacts/master/download?job=build' -o "$RUNNER_TEMP/iprover/build.zip"
+          unzip -q "$RUNNER_TEMP/iprover/build.zip" -d "$RUNNER_TEMP/iprover/artifact"
+          IPROVER_BIN=$(find "$RUNNER_TEMP/iprover/artifact" -type f -name 'iproveropt' | head -1)
+          test -n "$IPROVER_BIN"
+          chmod +x "$IPROVER_BIN"
+          echo "IPROVER_BIN=$IPROVER_BIN" >> "$GITHUB_ENV"
+          "$IPROVER_BIN" --help 2>&1 | head -20 || true
+
+      - name: Install current LADR-2026 Prover9
+        id: install_prover9
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/AlgorithmicTruth/Prover9.git "$RUNNER_TEMP/Prover9"
+          git -C "$RUNNER_TEMP/Prover9" rev-parse HEAD | tee "$RUNNER_TEMP/prover9_commit.txt"
+          make -C "$RUNNER_TEMP/Prover9" all
+          PROVER9_BIN="$RUNNER_TEMP/Prover9/bin/prover9"
+          test -x "$PROVER9_BIN"
+          echo "PROVER9_BIN=$PROVER9_BIN" >> "$GITHUB_ENV"
+          "$PROVER9_BIN" -h | head -20 || true
+
+      - name: Record exact environment and install outcomes
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          OUT="benchmarks/ocean/exp_003/results/${{ matrix.seed }}"
+          mkdir -p "$OUT"
+          {
+            echo "experiment=-003"
+            echo "seed=${{ matrix.seed }}"
+            echo "runner=$(uname -a)"
+            echo "python=$(python --version 2>&1)"
+            echo "git_commit=$(git rev-parse HEAD)"
+            echo "SPASS_install=${{ steps.install_spass.outcome }}"
+            echo "E_install=${{ steps.install_e.outcome }}"
+            echo "Vampire_install=${{ steps.install_vampire.outcome }}"
+            echo "iProver_install=${{ steps.install_iprover.outcome }}"
+            echo "Prover9_install=${{ steps.install_prover9.outcome }}"
+            echo "spass_path=$(command -v SPASS || echo MISSING)"
+            echo "spass_package=$(dpkg-query -W -f='${Version}' spass 2>/dev/null || echo MISSING)"
+            echo "eprover=${EPROVER_BIN:-MISSING}"
+            echo "vampire=${VAMPIRE_BIN:-MISSING}"
+            echo "iprover=${IPROVER_BIN:-MISSING}"
+            echo "prover9=${PROVER9_BIN:-MISSING}"
+            echo "iprover_upstream_head=$(cat "$RUNNER_TEMP/iprover/upstream_head.txt" 2>/dev/null || echo MISSING)"
+            echo "prover9_commit=$(cat "$RUNNER_TEMP/prover9_commit.txt" 2>/dev/null || echo MISSING)"
+          } > "$OUT/environment.txt"
+          cat "$OUT/environment.txt"
+
+      - name: Run all seven Experiment -003 lanes with equal 1800-second caps
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEED='${{ matrix.seed }}'
+          PROBLEM="benchmarks/ocean/exp_003/generated/$SEED/ocean_L150_seed$SEED.p"
+          OUT="benchmarks/ocean/exp_003/results/$SEED"
+          python data_mind_3/experiments/exp_003_ocean150_runner.py \
+            --seed "$SEED" \
+            --problem "$PROBLEM" \
+            --out "$OUT" \
+            --timeout 1800
+
+      - name: Show seed results
+        if: always()
+        shell: bash
+        run: |
+          cat "benchmarks/ocean/exp_003/results/${{ matrix.seed }}/results.json" || true
+          cat "benchmarks/ocean/exp_003/results/${{ matrix.seed }}/manifest.json" || true
+
+      - name: Upload seed evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp-003-seed-${{ matrix.seed }}
+          path: |
+            benchmarks/ocean/exp_003/generated/${{ matrix.seed }}/
+            benchmarks/ocean/exp_003/results/${{ matrix.seed }}/
+          retention-days: 90
+
+  summarize:
+    name: Summarize Experiment -003
+    if: always()
+    needs: seed
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all seed evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dm31-exp-003-seed-*
+          path: downloaded
+
+      - name: Build aggregate summary
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json, statistics
+          from collections import defaultdict
+          from pathlib import Path
+          rows=[]
+          for f in sorted(Path('downloaded').glob('**/results.json')):
+              seed=int(f.parent.name) if f.parent.name.isdigit() else None
+              data=json.loads(f.read_text())
+              for r in data:
+                  q=dict(r)
+                  q['seed']=seed
+                  rows.append(q)
+          out=Path('summary'); out.mkdir(exist_ok=True)
+          (out/'all_results.json').write_text(json.dumps(rows,indent=2),encoding='utf-8')
+          summary=[]
+          by=defaultdict(list)
+          for r in rows: by[r['solver']].append(r)
+          for solver, rr in sorted(by.items()):
+              proved=[r for r in rr if r.get('status')=='PROVED']
+              summary.append({
+                  'solver':solver,
+                  'proved':len(proved),
+                  'n':len(rr),
+                  'timeouts':sum(r.get('status')=='TIMEOUT' for r in rr),
+                  'faults':sum(r.get('status')=='FAULT' for r in rr),
+                  'unavailable':sum(r.get('status')=='UNAVAILABLE' for r in rr),
+                  'median_wall_s_proved':statistics.median(float(r['wall_s']) for r in proved) if proved else None,
+              })
+          (out/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+          if rows:
+              keys=sorted({k for r in rows for k in r if not isinstance(r.get(k),(dict,list))})
+              with (out/'all_results.csv').open('w',newline='',encoding='utf-8') as f:
+                  w=csv.DictWriter(f,fieldnames=keys,extrasaction='ignore'); w.writeheader(); w.writerows(rows)
+          print(json.dumps(summary,indent=2))
+          PY
+
+      - name: Upload aggregate Experiment -003 summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm31-exp-003-summary-${{ github.run_id }}
+          path: summary/
+          retention-days: 90
