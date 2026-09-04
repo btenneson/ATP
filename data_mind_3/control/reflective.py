@@ -15,31 +15,13 @@ PROFESSOR_SCALARIZATION: dict[str, float] = {
 
 
 class ReflectiveP1Controller(AdaptiveCreativityController):
-    """Professor-facing, operationally self-aware P1 controller for DATA MIND 3.1.
+    """Professor-facing, operationally self-aware P1 controller.
 
-    This controller deliberately distinguishes a measurable repair-*burden proxy*
-    from the true transaction-geometric repair horizon.  If q_raw is the current
-    locally checked structural partial-credit proxy, define
-
-        H_hat = max(0, 1/q_raw - 1).
-
-    H_hat is exactly the residual weighted obligation burden induced by the
-    current DATA MIND Metamath partial-credit formula; it is *not* asserted to be
-    the shortest repair distance to a verified proof.
-
-    The first positive H_hat in a run becomes the proof half-distance scale h_P,
-    so the initial repair-proximity component is normalized to one half.  The
-    preregisterable Professor credit used by P1 is
-
-        PC_prof = 0.5*q_raw + 0.5*2^(-H_hat/h_P).
-
-    Target relevance remains a separate search signal in the inherited successor
-    score and is therefore not counted a second time in this scalarization.
-
-    The Professor grades.  P1 owns the control response.  The optional Child is
-    still advisory creativity under P1 and receives P1's Professor-mediated
-    progress signal through the inherited controller.  Nothing in this class can
-    certify a proof or alter verifier acceptance semantics.
+    DATA MIND 3.3 preserves the existing Professor semantics while adding an
+    explicit *actual-call* cadence.  `Professor.deliver(...)` is never invoked
+    merely because `observe_expansion(...)` was called.  Between permitted
+    Professor calls P1 reuses the last advisory grade; the verifier remains the
+    only source of proof acceptance.
     """
 
     def __init__(
@@ -47,6 +29,7 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
         initial: CreativityVector | None = None,
         *,
         interval: int = 16,
+        professor_interval: int | None = None,
         experience: Iterable[dict[str, object]] = (),
         child_play: bool = True,
     ) -> None:
@@ -60,6 +43,8 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
         if not (self.profile.professor_facing and self.profile.self_aware):
             raise RuntimeError("ReflectiveP1Controller requires Professor-facing self-aware P1")
         self.professor = Professor()
+        self.professor_interval = max(4, int(professor_interval or interval))
+        self._last_professor_call_expansion: int | None = None
         self._repair_half_distance: float | None = None
         self._previous_raw_partial_credit: float | None = None
         self._previous_observation_expansion: int | None = None
@@ -67,6 +52,7 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
         self._last_professor_credit: float | None = None
         self.professor_updates = 0
         self.self_awareness_updates = 0
+        self.actual_professor_calls = 0
 
     @staticmethod
     def repair_burden_proxy(raw_partial_credit: float) -> float:
@@ -84,6 +70,11 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
     @property
     def last_professor_credit(self) -> float | None:
         return self._last_professor_credit
+
+    def _professor_due(self, expansion: int) -> bool:
+        if self._last_professor_call_expansion is None:
+            return expansion >= self.professor_interval
+        return expansion - self._last_professor_call_expansion >= self.professor_interval
 
     def _grade(
         self,
@@ -111,6 +102,8 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
             resource_delta=resource_delta,
         )
         grade = self.professor.deliver(self.profile, evidence)
+        self.actual_professor_calls += 1
+        self._last_professor_call_expansion = expansion
         professor_credit = grade.scalarize(PROFESSOR_SCALARIZATION)
         observation = SelfObservation(
             resource_spent=float(expansion),
@@ -139,11 +132,26 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
         base_config: object,
     ) -> dict[str, object] | None:
         raw_partial_credit = float(partial_credit)
-        grade, professor_credit, self_observation, h_hat = self._grade(
-            expansion=expansion,
-            raw_partial_credit=raw_partial_credit,
-            relevance=relevance,
-        )
+        professor_called = self._professor_due(expansion)
+        grade: ProfessorGrade | None = None
+        self_observation: SelfObservation | None = None
+        h_hat = self.repair_burden_proxy(raw_partial_credit)
+
+        if professor_called:
+            grade, professor_credit, self_observation, h_hat = self._grade(
+                expansion=expansion,
+                raw_partial_credit=raw_partial_credit,
+                relevance=relevance,
+            )
+        else:
+            # Reuse the last advisory value between actual Professor calls.  On
+            # startup, before the first permitted call, fall back to the locally
+            # checked raw partial-credit signal rather than fabricating a grade.
+            professor_credit = (
+                self._last_professor_credit
+                if self._last_professor_credit is not None
+                else raw_partial_credit
+            )
 
         event = super().observe_expansion(
             expansion=expansion,
@@ -161,18 +169,31 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
 
         professor_event: dict[str, object] = {
             "actor": "Professor",
-            "action": "grade_P1",
+            "action": "grade_P1" if professor_called else "reuse_cached_grade",
             "expansion": expansion,
             "recipient": "P1",
+            "actual_professor_call": professor_called,
+            "professor_interval": self.professor_interval,
+            "actual_professor_calls_total": self.actual_professor_calls,
             "raw_structural_partial_credit": raw_partial_credit,
             "repair_horizon_proxy": h_hat,
             "repair_half_distance": self._repair_half_distance,
-            "grade": grade.to_dict(),
+            "grade": grade.to_dict() if grade is not None else (
+                self._last_professor_grade.to_dict() if self._last_professor_grade is not None else None
+            ),
             "professor_credit": professor_credit,
             "scalarization": dict(PROFESSOR_SCALARIZATION),
             "repair_horizon_semantics": "H_hat=max(0,1/q_raw-1); burden proxy, not exact repair distance",
             "partial_credit_semantics": "locally checked structural proxy; not terminal verifier acceptance",
         }
+
+        if self_observation is None:
+            self_observation = SelfObservation(
+                resource_spent=float(expansion),
+                partial_credit=professor_credit,
+                previous_partial_credit=self._last_professor_credit,
+                resource_delta=None,
+            )
         self_event: dict[str, object] = {
             "actor": "P1",
             "action": "self_observe",
@@ -183,22 +204,22 @@ class ReflectiveP1Controller(AdaptiveCreativityController):
             "previous_professor_credit": self_observation.previous_partial_credit,
             "resource_delta": self_observation.resource_delta,
             "marginal_credit_per_resource": self_observation.marginal_credit_per_resource,
+            "actual_professor_call": professor_called,
         }
 
-        # The inherited control snapshot is already in history.  Mutating this
-        # dictionary enriches that same recorded snapshot with the advisory
-        # grade P1 actually used, while separate Professor/P1 events preserve
-        # the role boundary in the Historian.
         event.update({
             "agent": "P1",
             "professor_credit": professor_credit,
-            "professor_grade": grade.to_dict(),
+            "professor_grade": professor_event["grade"],
+            "actual_professor_call": professor_called,
+            "actual_professor_calls_total": self.actual_professor_calls,
             "repair_horizon_proxy": h_hat,
             "repair_half_distance": self._repair_half_distance,
             "self_awareness": self_event,
         })
         self.history.append(professor_event)
         self.history.append(self_event)
-        self.professor_updates += 1
+        if professor_called:
+            self.professor_updates += 1
         self.self_awareness_updates += 1
         return event
