@@ -42,6 +42,7 @@ jobs:
           test "$(git hash-object data_mind_3/control/reflective.py)" = "5227de6409f0008257f6eb11a579d387ae261df6"
           test -f data_mind_3_3/ORACLE_SEMANTICS_FROZEN_001.md
           test -f data_mind_3_3/experiments/EXPERIMENT_001_LOGICAL_DREAMER_FROZEN20.md
+          test -f data_mind_3_3/experiments/EXPERIMENT_001_SCOPE_FREEZE.md
           echo EXP001_FROZEN_BLOB_GATE=PASS
 
       - name: Compile scientific runner and summarizer
@@ -242,6 +243,7 @@ jobs:
           path: |
             dm33_exp001_summary.json
             data_mind_3_3/experiments/EXPERIMENT_001_LOGICAL_DREAMER_FROZEN20.md
+            data_mind_3_3/experiments/EXPERIMENT_001_SCOPE_FREEZE.md
             data_mind_3_3/ORACLE_SEMANTICS_FROZEN_001.md
             data_mind_3_3/experiments/exp001_config.py
             benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
