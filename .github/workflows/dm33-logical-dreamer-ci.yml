@@ -9,6 +9,8 @@ on:
       - 'data_mind_3_3/**'
       - 'data_mind_3_2/**'
       - 'data_mind_3/control/futurebank.py'
+      - 'data_mind_3/control/reflective.py'
+      - 'data_mind_3/tests/test_professor_reflective_interfaces.py'
       - '.github/workflows/dm33-logical-dreamer-ci.yml'
   workflow_dispatch:
 
@@ -25,11 +27,13 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --quiet pytest
 
-      - name: Test Logical Dreamer gates, throttles, typed oracles, shadow bridge, FUTUREBANK isolation, and reflection
+      - name: Test Dreamer architecture, OFF invariant, causal promotion, accounting, and non-scientific smoke path
         run: |
           PYTHONPATH=. pytest -q \
             data_mind_3_3/tests/test_logical_dreamer.py \
-            data_mind_3_3/tests/test_dreamer_shadow_bridge.py
+            data_mind_3_3/tests/test_dreamer_shadow_bridge.py \
+            data_mind_3_3/tests/test_causal_promotion_bridge.py \
+            data_mind_3_3/tests/test_end_to_end_smoke.py
 
       - name: Recheck inherited DATA MIND 3.2 oracle dynamics
         run: |
@@ -37,7 +41,7 @@ jobs:
             data_mind_3_2/tests/test_hyperfinite_oracle.py \
             data_mind_3_2/tests/test_oracle_atp_dynamics.py
 
-      - name: Recheck inherited DATA MIND 3.1 control interfaces
+      - name: Recheck Professor actual-call throttle and inherited DATA MIND 3.1 control interfaces
         run: |
           PYTHONPATH=. pytest -q \
             data_mind_3/tests/test_professor_reflective_interfaces.py \
