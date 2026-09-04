@@ -102,11 +102,16 @@ Implemented now:
 6. Dreamer synthesis into speculative FUTUREBANK proposals;
 7. proposal provenance/cost logging;
 8. operational self-reflection over access, usage, cost, and observed consequence;
-9. tests asserting no verifier/BANK authority surface.
+9. tests asserting no verifier/BANK authority surface;
+10. typed finite O1 role, O2 resource, O3 strategy, and O4 certificate-candidate adapters;
+11. a non-privileged `DreamerSearchSnapshot` populated from ordinary search-control telemetry;
+12. a Metamath shadow bridge that invokes Dreamer only on genuine controller update events;
+13. forced no-promotion shadow execution, with no causal effect on search decisions.
 
 Not yet implemented:
 
 - a scientific benchmark of Dreamer effectiveness;
+- promoted Dreamer actions that can affect the live search;
 - adaptive O2 control of oracle throttles;
 - self-aware oracle implementations;
 - full Dreamer/oracle awareness matrix;
@@ -121,3 +126,26 @@ The first scientific question for DATA MIND 3.3 is intended to be:
 > Under equal externally enforced resource budgets, does a formally reflective Logical Dreamer with controlled access to selected subsets of O1/O2/O3/O4 improve verifier-certified settlement performance?
 
 No result is claimed until a separately frozen and launched experiment answers that question.
+
+## 9. Milestone 2 — four-oracle installation in shadow mode
+
+The first finite oracle installation uses typed advice rather than treating oracle outputs as interchangeable scalars:
+
+- O1 returns task-role advice. In the present Metamath proof-search lane it identifies the configured lane as `P` but explicitly does not infer hidden theorem truth.
+- O2 reads checked resource/frontier/branch/stagnation telemetry and returns a conservative finite resource posture.
+- O3 reads checked search telemetry and returns one existing `EscapeAction` class.
+- O4 may surface an already-existing candidate certificate reference and readiness signal, but it cannot invent verifier acceptance or certify a proof.
+
+The `ShadowDreamerController` wraps an inherited DATA MIND controller by delegation. Ordinary goal selection, successor scoring, creativity, effective search settings, Sentinel behavior, verifier behavior, and BANK semantics remain owned by the inherited system.
+
+Dreamer is called only after the inherited controller emits a real control-update event. The bridge then creates a speculative FUTUREBANK proposal and closes the transaction without requesting promotion.
+
+Therefore Milestone 2 establishes the executable path
+
+`live ATP telemetry -> O1/O2/O3/O4 -> Dreamer -> FUTUREBANK -> discard/audit`
+
+while deliberately not yet establishing
+
+`FUTUREBANK -> promoted live search action`.
+
+This shadow phase is architecture validation only and is not a scientific settlement experiment.
