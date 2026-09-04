@@ -25,10 +25,11 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --quiet pytest
 
-      - name: Test Logical Dreamer gates, hard throttles, FUTUREBANK isolation, and reflection
+      - name: Test Logical Dreamer gates, throttles, typed oracles, shadow bridge, FUTUREBANK isolation, and reflection
         run: |
           PYTHONPATH=. pytest -q \
-            data_mind_3_3/tests/test_logical_dreamer.py
+            data_mind_3_3/tests/test_logical_dreamer.py \
+            data_mind_3_3/tests/test_dreamer_shadow_bridge.py
 
       - name: Recheck inherited DATA MIND 3.2 oracle dynamics
         run: |
