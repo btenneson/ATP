@@ -3,6 +3,7 @@ from pathlib import Path
 from data_mind_3.control.controller import AdaptiveCreativityController
 from data_mind_3.metamath.parser import parse_database
 from data_mind_3.metamath.search import SearchConfig
+from data_mind_3.metamath.verifier import verify_with_brian_metamath
 from data_mind_3_3.costs import account_run_cost
 from data_mind_3_3.dreamer import OracleAccessMask, OracleThrottle, PromotionThrottle
 from data_mind_3_3.metamath.causal_bridge import (
@@ -13,22 +14,31 @@ from data_mind_3_2.epistemic.oracle_dynamics import OracleFacet
 
 
 HERE = Path(__file__).parent
+ROOT = HERE.parents[1]
+SOURCE = HERE / "dreamer_chain.mm"
+VERIFIER = ROOT / "metamath.py"
 EXPECTED = ("a0", "r1", "r2", "r3", "r4", "r5")
 
 
 def _smoke_verifier(proof):
-    # Deliberately independent of Dreamer/oracle output.  This is a tiny fixture
-    # verifier only; it is not claimed as the production Metamath verifier.
-    accepted = tuple(proof) == EXPECTED
-    return accepted, {
-        "accepted": accepted,
-        "verifier": "fixed-chain-smoke-verifier",
-        "expected_length": len(EXPECTED),
+    vr = verify_with_brian_metamath(
+        SOURCE,
+        "th",
+        tuple(proof),
+        VERIFIER,
+        timeout_s=30.0,
+    )
+    return vr.accepted, {
+        "accepted": vr.accepted,
+        "returncode": vr.returncode,
+        "verifier": vr.verifier,
+        "stdout_tail": vr.stdout[-1000:],
+        "stderr_tail": vr.stderr[-1000:],
     }
 
 
-def test_causal_dreamer_smoke_reaches_verifier_after_real_promotion():
-    db = parse_database(HERE / "dreamer_chain.mm")
+def test_causal_dreamer_smoke_reaches_independent_verifier_after_real_promotion():
+    db = parse_database(SOURCE)
     controller = AdaptiveCreativityController(interval=4)
     dreamer = build_causal_dreamer(
         access=OracleAccessMask.from_bits((1, 1, 1, 1)),
@@ -51,6 +61,7 @@ def test_causal_dreamer_smoke_reaches_verifier_after_real_promotion():
 
     assert result.status == "PROVED"
     assert result.verification["accepted"] is True
+    assert "metamath" in result.verification["verifier"].lower()
     assert result.proof_labels == EXPECTED
     assert bridge.history
     assert any(row.promotion_granted for row in bridge.history)
