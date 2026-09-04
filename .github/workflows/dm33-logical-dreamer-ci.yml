@@ -1,0 +1,43 @@
+# Architecture/runtime CI only. This is not a scientific experiment.
+name: DATA MIND 3.3 Logical Dreamer CI
+
+on:
+  push:
+    branches:
+      - data-mind-3.3-logical-dreamer
+    paths:
+      - 'data_mind_3_3/**'
+      - 'data_mind_3_2/**'
+      - 'data_mind_3/control/futurebank.py'
+      - '.github/workflows/dm33-logical-dreamer-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-logical-dreamer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+
+      - name: Test Logical Dreamer gates, hard throttles, FUTUREBANK isolation, and reflection
+        run: |
+          PYTHONPATH=. pytest -q \
+            data_mind_3_3/tests/test_logical_dreamer.py
+
+      - name: Recheck inherited DATA MIND 3.2 oracle dynamics
+        run: |
+          PYTHONPATH=. pytest -q \
+            data_mind_3_2/tests/test_hyperfinite_oracle.py \
+            data_mind_3_2/tests/test_oracle_atp_dynamics.py
+
+      - name: Recheck inherited DATA MIND 3.1 control interfaces
+        run: |
+          PYTHONPATH=. pytest -q \
+            data_mind_3/tests/test_professor_reflective_interfaces.py \
+            data_mind_3/tests/test_adaptive_control.py
