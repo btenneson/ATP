@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from itertools import combinations
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from data_mind_3.control.agents import SettlementRole
@@ -67,7 +66,9 @@ class OraclePartition:
         normalized = []
         for block in self.blocks:
             normalized.append("".join(sorted(facet_number(f) for f in block)))
-        normalized.sort(key=lambda x: (len(x), x))
+        # Order blocks by their least oracle index, matching the mathematical
+        # notation used in the architecture: {123}{4}, not {4}{123}.
+        normalized.sort(key=lambda x: tuple(int(c) for c in x))
         return "{" + "}{".join(normalized) + "}"
 
 
