@@ -1,0 +1,10 @@
+DATA MIND 3.3 Experiment 001 — Logical Dreamer Frozen-20 Mechanism
+
+LAUNCH AUTHORIZATION: user explicitly authorized proceeding through preregistration and scientific test.
+FROZEN PREREGISTRATION: data_mind_3_3/experiments/EXPERIMENT_001_LOGICAL_DREAMER_FROZEN20.md
+SCOPE FREEZE: data_mind_3_3/experiments/EXPERIMENT_001_SCOPE_FREEZE.md
+ORACLE SEMANTICS: ORACLE_SEMANTICS_FROZEN_001
+CANONICAL BENCHMARK LOCK BLOB: 2725ae80c22bf0dd74a38ed1ba4ffb21a7ad7b9c
+PRELAUNCH CI RUN: 33905437574 — PASS
+
+This marker launches the frozen workflow. No experimental parameter may be changed under Experiment 001 after this marker without creating a new experiment identifier.
