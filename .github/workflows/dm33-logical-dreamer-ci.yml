@@ -46,3 +46,36 @@ jobs:
           PYTHONPATH=. pytest -q \
             data_mind_3/tests/test_professor_reflective_interfaces.py \
             data_mind_3/tests/test_adaptive_control.py
+
+      - name: Compile preregistered Experiment 001 code without launching it
+        run: |
+          PYTHONPATH=. python -m py_compile \
+            data_mind_3_3/experiments/prepare_frozen20_split.py \
+            data_mind_3_3/experiments/exp001_config.py \
+            data_mind_3_3/experiments/exp001_lane.py \
+            data_mind_3_3/experiments/exp001_summarize.py
+
+      - name: Check frozen Experiment 001 blobs and constants
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json)" = "2725ae80c22bf0dd74a38ed1ba4ffb21a7ad7b9c"
+          test "$(git hash-object data_mind_3_3/oracles.py)" = "2342bba42523a00787c1c0d0888001a599e2e4c4"
+          test "$(git hash-object data_mind_3_3/experiments/exp001_config.py)" = "b9c2fb7af257d7d693deb8c9e4bfd775d17cfb24"
+          test "$(git hash-object data_mind_3_3/promotion.py)" = "c2d8b5c7092ea0b6b24f583cd6a714b58d85f3ac"
+          test "$(git hash-object data_mind_3_3/metamath/causal_bridge.py)" = "043c4e1f0e3f510620bf7967edad57684c5e6eba"
+          test "$(git hash-object data_mind_3/control/reflective.py)" = "5227de6409f0008257f6eb11a579d387ae261df6"
+          test -f data_mind_3_3/experiments/EXPERIMENT_001_LOGICAL_DREAMER_FROZEN20.md
+          test -f data_mind_3_3/experiments/EXPERIMENT_001_SCOPE_FREEZE.md
+          PYTHONPATH=. python - <<'PY'
+          from data_mind_3_3.experiments import exp001_config as c
+          assert c.ARMS == ('off','placebo-o3','o3','o34','o1234')
+          assert c.EXPERIMENT_SEED == 330001
+          assert c.CONTROL_INTERVAL == 16
+          assert c.PROFESSOR_INTERVAL == 256
+          assert c.MAX_EXPANSIONS == 100000
+          assert c.TIMEOUT_S == 1800.0
+          assert c.PROMOTION_THROTTLE.max_promotions == 64
+          assert c.PROMOTION_THROTTLE.min_steps_between_promotions == 64
+          print('DM33_EXP001_PRELAUNCH_GATE=PASS')
+          PY
