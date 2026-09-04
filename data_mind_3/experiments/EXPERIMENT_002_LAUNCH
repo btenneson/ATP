@@ -1,0 +1,18 @@
+DATA MIND 3.1 Experiment 002 — Professor Cadence Frozen-20
+
+Authorized by user: 2026-09-03 America/Los_Angeles
+Purpose: test whether less frequent Professor-to-P1 control intervention reduces oversteering while preserving useful reflective rescues.
+
+Frozen arms:
+- off
+- common fixed P2
+- c16
+- c64
+- c256
+- event-triggered + 128-expansion cooldown
+
+Frozen benchmark: DATA-MIND set.mm Frozen-20 Benchmark 001
+Per-lane budget: 50,000 expansions / 900 seconds
+Child: disabled
+Official runtime claim: false
+Canonical architecture snapshot: unchanged
