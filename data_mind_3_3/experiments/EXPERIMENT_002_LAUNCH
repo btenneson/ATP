@@ -1,0 +1,7 @@
+DATA MIND 3.3 Experiment 002 launch trigger
+Frozen preregistration: EXPERIMENT_002_PROFESSOR_THROTTLE_FROZEN20.md
+Frozen scope: EXPERIMENT_002_SCOPE_FREEZE.md
+Arms: prof-off, prof-16, prof-64, prof-256
+Controller interval: 16
+Dreamer: OFF
+Benchmark: DATA-MIND set.mm Frozen-20 Benchmark 001
