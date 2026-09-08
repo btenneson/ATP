@@ -1,0 +1,254 @@
+name: DATA MIND Hilbert Ablation 001
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experiment/data-mind-hilbert-ablation-001
+    paths:
+      - data_mind_hilbert/experiments/EXPERIMENT_001_LAUNCH
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  SETMM_COMMIT: f85a8edbb6df20dd5a64a9c159fa22944a3e54de
+  SETMM_SHA256: 19cb1ec229f3f11e36ff439a6381878864d9f2d4906f20fc9401346b309894e3
+
+jobs:
+  preflight:
+    name: frozen geometry and verifier-firewall gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet pytest
+
+      - name: Compile experiment modules
+        run: |
+          python -m py_compile \
+            data_mind_hilbert/geometry.py \
+            data_mind_hilbert/search.py \
+            data_mind_hilbert/experiments/exp001_config.py \
+            data_mind_hilbert/experiments/prepare_targets.py \
+            data_mind_hilbert/experiments/exp001_lane.py \
+            data_mind_hilbert/experiments/exp001_summarize.py
+
+      - name: Verify Hilbert transform and OFF-mode baseline equivalence
+        run: |
+          pytest -q \
+            data_mind_hilbert/tests/test_geometry.py \
+            data_mind_3/tests/test_metamath_adapter.py
+
+      - name: Assert frozen experiment constants
+        run: |
+          python - <<'PY'
+          from data_mind_hilbert.experiments import exp001_config as c
+          from data_mind_hilbert.search import HILBERT_WEIGHT
+          assert c.ARMS == ('A','B','C')
+          assert c.ARM_MODES == {'A':'off','B':'naive','C':'structural'}
+          assert c.TARGET_SELECTION_SEED == 314159
+          assert c.TARGET_COUNT == 50
+          assert c.P_TARGETS == 40 and c.R_TARGETS == 10
+          assert c.MAX_EXPANSIONS == 20000
+          assert c.TIMEOUT_S == 300.0
+          assert c.CANDIDATE_CAP == 64
+          assert c.MAX_DEPTH == 24
+          assert c.MAX_OPEN_GOALS == 24
+          assert c.MAX_FRONTIER == 200000
+          assert c.HILBERT_BITS == 6
+          assert c.HILBERT_WEIGHT == HILBERT_WEIGHT == 0.75
+          print('HILBERT_EXP001_CONFIG_GATE=PASS')
+          PY
+
+      - name: Require preregistration and launch marker
+        run: |
+          test -f data_mind_hilbert/experiments/EXPERIMENT_001_FREEZE.md
+          test -f data_mind_hilbert/experiments/EXPERIMENT_001_LAUNCH
+          echo HILBERT_EXP001_PREREG_GATE=PASS
+
+  prepare:
+    name: reconstruct frozen holdout and select proof-free P/R cohort
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+
+      - name: Reconstruct canonical proof-free holdout metadata
+        run: |
+          mkdir -p split_meta
+          python -u data_mind_3_3/experiments/prepare_frozen20_split.py \
+            --setmm set.mm \
+            --out-labels split_meta/holdout_labels.txt \
+            --out-summary split_meta/split_summary.json
+
+      - name: Select sealed 40-P 10-R Hilbert pilot cohort without proof text
+        run: |
+          python -u data_mind_hilbert/experiments/prepare_targets.py \
+            --setmm set.mm \
+            --holdout-labels split_meta/holdout_labels.txt \
+            --out split_meta/hilbert_exp001_targets.json
+          python - <<'PY'
+          import json
+          p=json.load(open('split_meta/hilbert_exp001_targets.json'))
+          assert p['proof_text_accessed_by_this_selector'] is False
+          assert len(p['targets']) == 50
+          assert sum(r['channel']=='P' for r in p['targets']) == 40
+          assert sum(r['channel']=='R' for r in p['targets']) == 10
+          assert len({r['label'] for r in p['targets']}) == 50
+          print('HILBERT_EXP001_TARGET_GATE=PASS')
+          PY
+
+      - name: Upload proof-free split and target metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: hilbert-exp001-meta-${{ github.run_id }}
+          path: split_meta/
+          if-no-files-found: error
+          retention-days: 90
+
+  settle:
+    name: target ${{ matrix.ordinal }} three-arm geometry ablation
+    needs: [preflight, prepare]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        ordinal: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download proof-free metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: hilbert-exp001-meta-${{ github.run_id }}
+          path: split_meta
+
+      - name: Fetch exact frozen set.mm
+        run: |
+          set -euo pipefail
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            --connect-timeout 30 --max-time 300 \
+            -o set.mm \
+            "https://raw.githubusercontent.com/metamath/set.mm/${SETMM_COMMIT}/set.mm"
+          echo "${SETMM_SHA256}  set.mm" | sha256sum -c -
+
+      - name: Run A/B/C in fresh deterministic processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'hilbert_exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          mkdir -p "$root"
+          for arm in A B C; do
+            mkdir -p "$root/$arm"
+            echo "=== HILBERT EXP001 target ${{ matrix.ordinal }} arm $arm ==="
+            timeout --signal=TERM --kill-after=30s 390s \
+              python -u data_mind_hilbert/experiments/exp001_lane.py \
+                --arm "$arm" \
+                --target-ordinal '${{ matrix.ordinal }}' \
+                --setmm set.mm \
+                --holdout-labels split_meta/holdout_labels.txt \
+                --targets split_meta/hilbert_exp001_targets.json \
+                --verifier metamath.py \
+                --out "$root/$arm/result.json" \
+              2>&1 | tee "$root/$arm.console.log"
+          done
+
+      - name: Validate three scientific records
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=$(printf 'hilbert_exp001_results/target-%02d' '${{ matrix.ordinal }}')
+          python - "$root" <<'PY'
+          import json, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          modes={'A':'off','B':'naive','C':'structural'}
+          target=None
+          channel=None
+          for arm,mode in modes.items():
+              path=root/arm/'result.json'
+              assert path.exists(), path
+              row=json.loads(path.read_text())
+              assert row['scientific_run'] is True
+              assert row['arm']==arm and row['navigation_mode']==mode
+              assert row['config']['max_expansions']==20000
+              assert row['config']['hilbert_bits']==6
+              assert row['config']['hilbert_weight']==0.75
+              if target is None:
+                  target=row['target']; channel=row['channel']
+              assert row['target']==target and row['channel']==channel
+              if row['settled']:
+                  assert row['status']=='PROVED'
+                  assert row['verification']['accepted'] is True
+              if arm=='A':
+                  assert row['geometry']['events']==0
+          print('HILBERT_EXP001_TARGET_RECORD_GATE=PASS')
+          PY
+
+      - name: Upload target evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hilbert-exp001-target-${{ matrix.ordinal }}-${{ github.run_id }}
+          path: hilbert_exp001_results/
+          if-no-files-found: warn
+          retention-days: 90
+
+  summarize:
+    name: paired verifier-first Hilbert summary
+    if: always()
+    needs: [preflight, prepare, settle]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all target evidence
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: hilbert-exp001-target-*-${{ github.run_id }}
+          path: collected
+          merge-multiple: true
+      - name: Build paired summary
+        run: |
+          python data_mind_hilbert/experiments/exp001_summarize.py \
+            --input-dir collected \
+            --out-json hilbert_exp001_summary.json \
+            --out-csv hilbert_exp001_paired.csv \
+            --out-md hilbert_exp001_results.md
+      - name: Upload summary and frozen specification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hilbert-exp001-summary-${{ github.run_id }}
+          path: |
+            hilbert_exp001_summary.json
+            hilbert_exp001_paired.csv
+            hilbert_exp001_results.md
+            data_mind_hilbert/experiments/EXPERIMENT_001_FREEZE.md
+            data_mind_hilbert/experiments/exp001_config.py
+            split_meta/hilbert_exp001_targets.json
+            benchmarks/data-mind-3.1-frozen20-001/benchmark_lock.json
+          if-no-files-found: warn
+          retention-days: 90
