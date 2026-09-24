@@ -80,12 +80,18 @@ def ranked_items(policy, gt, closers, openers, candidate_cap: int):
     items = list(closers) + list(openers)
     if not items:
         return []
+    # Match the known-good finite exhaustive PRCOM enumerator exactly:
+    # when the compatible set already fits under the cap, keep all of it
+    # without consulting the learned ranker.  This matters at the root.
+    if candidate_cap <= 0 or len(items) <= candidate_cap:
+        return [(0.0, item) for item in items]
     scores = [0.0] * len(items) if policy is None else list(policy.rank(gt, items))
+    if len(scores) != len(items):
+        raise RuntimeError("ranker returned %d scores for %d candidates" %
+                           (len(scores), len(items)))
     scored = [(float(s), item) for s, item in zip(scores, items)]
     scored.sort(key=lambda p: (-p[0], p[1][0]))
-    if candidate_cap > 0:
-        scored = scored[:candidate_cap]
-    return scored
+    return scored[:candidate_cap]
 
 
 def children(E, index, policy, node, max_open: int, candidate_cap: int):
