@@ -173,7 +173,12 @@ def emit_and_verify(E, mm, label, node, fvar, fallback, environment: Path,
     check = E.MM()
     check.labels = dict(mm.labels)
     check.order = list(mm.order)
-    check.proofs = dict(mm.proofs)
+    # Copy the prefix proof database without ever reading the guarded target proof.
+    # GuardedProofs is a UserDict whose public __getitem__ correctly traps target
+    # access; use its underlying data only to construct an explicitly target-free
+    # verifier database.
+    proof_source = mm.proofs.data if hasattr(mm.proofs, "data") else mm.proofs
+    check.proofs = {k: v for k, v in proof_source.items() if k != label}
     check.constants, check.variables = mm.constants, mm.variables
     check.scope_dvs = dict(mm.scope_dvs)
     data = mm.labels[label][1]
