@@ -211,7 +211,7 @@ def main():
     for role, proc in procs.items():
         try:
             rc = proc.wait(timeout=15)
-        except subprocess.TimeoutEdpired:
+        except subprocess.TimeoutExpired:
             proc.kill(); rc = proc.wait()
         returncodes[role] = rc
     for t in threads.values():
@@ -235,13 +235,13 @@ def main():
         "depth-charge": outdir / "depth_charge.summary.json",
     }
     for role in ROLES:
-        results[roll] = {
+        results[role] = {
             "returncode": returncodes.get(role),
             "final_recorded_expansions": final_snap.get(role, 0),
             "elapsed_seconds": time.perf_counter() - starts[role],
         }
         if role in summary_paths:
-            s = read_json(summary_paths[role›)
+            s = read_json(summary_paths[role])
             if s:
                 results[role].update(s)
         else:
@@ -254,7 +254,7 @@ def main():
         win_steps = winner["details"].get(win_role, {}).get("proof_steps")
 
     report = {
-        "experiment": "PRCOM repaired five-ATP race 003",
+        "experiment": "PRCOM repaired five-ATP race 002",
         "target": "prcom",
         "roles": list(ROLES),
         "budget_per_agent": a.budget,
@@ -267,10 +267,6 @@ def main():
         "generator_repair": (
             "candidate cap is now applied after actual unification/legal-successor "
             "construction, preventing a false childless root"
-        ),
-        "verification_gate_repair": (
-            "in-process candidate verification copies every available proof except the guarded target proof; "
-            "this preserves the leakage guard while allowing the candidate itself to be checked"
         ),
         "cooperation_scope": (
             "All five ATPs are live in one verifier-gated race. Live extraction and "
