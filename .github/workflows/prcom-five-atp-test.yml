@@ -70,7 +70,6 @@ jobs:
         run: |
           cp experiments/prcom_five_atp/hhdf_prcom_bfts.py 'predator 8/recovered8_002/'
           cp experiments/prcom_five_atp/prcom_five_atp_federation.py 'predator 8/recovered8_002/'
-          cp 'predator 8/recovered8_002/predator8_019_target.py' 'predator 8/recovered8_002/predator8_019_target.py'
           python -m py_compile \
             'predator 8/recovered8_002/hhdf_prcom_bfts.py' \
             'predator 8/recovered8_002/prcom_five_atp_federation.py'
