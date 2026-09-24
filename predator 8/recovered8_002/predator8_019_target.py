@@ -62,7 +62,9 @@ def verify_emit(E, mm, cutoff, label, result, environment, output, model_desc):
     check = E.MM()
     check.labels = dict(mm.labels)
     check.order = list(mm.order)
-    check.proofs = dict(mm.proofs)
+    # Copy every available proof except the guarded target proof.  Iterating
+    # GuardedProofs is safe, but accessing prcom itself is deliberately blocked.
+    check.proofs = {k: mm.proofs[k] for k in mm.proofs if k != label}
     check.constants, check.variables = mm.constants, mm.variables
     check.scope_dvs = dict(mm.scope_dvs)
     data = mm.labels[label][1]
