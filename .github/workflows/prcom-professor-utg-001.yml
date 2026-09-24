@@ -1,0 +1,163 @@
+name: PRCOM Experiment 001 Professor vs no Professor
+
+on:
+  push:
+    branches:
+      - experiment/prcom-professor-utg-001-20260924
+    paths:
+      - 'experiments/prcom_five_atp/prcom_professor_hybrid.py'
+      - '.github/workflows/prcom-professor-utg-001.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: python -m pip install --quiet numpy scipy scikit-learn joblib
+
+      - name: Reassemble frozen Predator 8.002 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          test "$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')" = \
+               "0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c"
+
+      - name: Install frozen control and Professor runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp experiments/prcom_five_atp/hhdf_prcom_bfts.py 'predator 8/recovered8_002/'
+          cp experiments/prcom_five_atp/prcom_professor_hybrid.py 'predator 8/recovered8_002/'
+          python -m py_compile \
+            'predator 8/recovered8_002/hhdf_prcom_bfts.py' \
+            'predator 8/recovered8_002/prcom_professor_hybrid.py'
+
+      - name: Run matched control then Professor hybrid
+        shell: bash
+        run: |
+          set +e
+          cd 'predator 8/recovered8_002'
+          mkdir -p prcom_professor_utg_001
+
+          /usr/bin/time -f 'wall_seconds=%e\nmax_rss_kb=%M' -o prcom_professor_utg_001/control.time \
+            python -u hhdf_prcom_bfts.py set.mm \
+              --engine Predator_8.001_FROZEN.py --model prcom_quick_policy.joblib \
+              --label prcom --mode hilbert --candidate-cap 8 --max-depth 4 --max-open 8 \
+              --max-expanded 10000 --seed 260923 \
+              --out prcom_professor_utg_001/control.mm \
+              --summary prcom_professor_utg_001/control.summary.json \
+              > prcom_professor_utg_001/control.log 2>&1
+          RC_CONTROL=$?
+
+          /usr/bin/time -f 'wall_seconds=%e\nmax_rss_kb=%M' -o prcom_professor_utg_001/professor.time \
+            python -u prcom_professor_hybrid.py set.mm \
+              --engine Predator_8.001_FROZEN.py --model prcom_quick_policy.joblib \
+              --label prcom --candidate-cap 8 --max-depth 4 --max-open 8 \
+              --max-expanded 10000 --seed 260923 --professor-share 0.5 \
+              --out prcom_professor_utg_001/professor.mm \
+              --summary prcom_professor_utg_001/professor.summary.json \
+              --trace prcom_professor_utg_001/professor.trace.jsonl \
+              > prcom_professor_utg_001/professor.log 2>&1
+          RC_PROF=$?
+
+          echo "control_rc=$RC_CONTROL" > prcom_professor_utg_001/run_status.txt
+          echo "professor_rc=$RC_PROF" >> prcom_professor_utg_001/run_status.txt
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('prcom_professor_utg_001')
+          def load(name):
+              q=p/name
+              return json.loads(q.read_text()) if q.exists() else None
+          def timing(name):
+              q=p/name
+              d={}
+              if q.exists():
+                  for line in q.read_text().splitlines():
+                      if '=' in line:
+                          k,v=line.split('=',1)
+                          try: d[k]=float(v)
+                          except: d[k]=v
+              return d
+          c=load('control.summary.json')
+          r=load('professor.summary.json')
+          summary={
+              'experiment':'PRCOM Experiment 001',
+              'frozen_setmm_sha256':'1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5',
+              'control':c,
+              'professor':r,
+              'control_timing':timing('control.time'),
+              'professor_timing':timing('professor.time'),
+              'only_intended_difference':(
+                  'Professor condition adds a 50% A*-style Professor priority queue; '
+                  'legal successor generation, candidate cap, target-clean model, Hilbert '
+                  'chart, target guard, proof reconstruction, and dual Metamath verification '
+                  'are shared with the no-Professor control.'
+              )
+          }
+          if c and r and c.get('expansions') and r.get('expansions'):
+              summary['expansion_ratio_control_over_professor']=c['expansions']/r['expansions']
+          cw=summary['control_timing'].get('wall_seconds')
+          rw=summary['professor_timing'].get('wall_seconds')
+          if isinstance(cw,(int,float)) and isinstance(rw,(int,float)) and rw:
+              summary['wall_ratio_control_over_professor']=cw/rw
+          (p/'comparison.summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+
+          # Scientific UNKNOWN (rc 1) is valid data.  Other codes are protocol failures.
+          if [ "$RC_CONTROL" -gt 1 ] || [ "$RC_PROF" -gt 1 ]; then exit 2; fi
+          exit 0
+
+      - name: Show compact result
+        if: always()
+        shell: bash
+        run: |
+          cat 'predator 8/recovered8_002/prcom_professor_utg_001/comparison.summary.json' 2>/dev/null || true
+          echo '--- control tail ---'
+          tail -80 'predator 8/recovered8_002/prcom_professor_utg_001/control.log' 2>/dev/null || true
+          echo '--- professor tail ---'
+          tail -80 'predator 8/recovered8_002/prcom_professor_utg_001/professor.log' 2>/dev/null || true
+
+      - name: Upload complete experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prcom-professor-utg-001-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/prcom_professor_utg_001/**
+          retention-days: 90
