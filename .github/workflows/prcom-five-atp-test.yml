@@ -26,8 +26,8 @@ jobs:
     timeout-minutes: 90
     env:
       PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
-      BUDGET: ${{ github.event.inputs.budget || '30000' }}
-      RACE_INPUT: ${{ github.event.inputs.race || 'false' }}
+      BUDGET: ${{ github.event.inputs.budget || '5000' }}
+      RACE_INPUT: ${{ github.event.inputs.race || 'true' }}
     steps:
       - uses: actions/checkout@v4
 
