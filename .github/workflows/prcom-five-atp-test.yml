@@ -1,0 +1,100 @@
+name: PRCOM five-ATP GBG/Hilbert/BFTS experiment
+
+on:
+  push:
+    branches: [hhdf-prcom-five-atp-test]
+    paths:
+      - '.github/workflows/prcom-five-atp-test.yml'
+      - 'experiments/prcom_five_atp/**'
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: Per-agent expansion budget
+        required: false
+        default: '30000'
+      race:
+        description: Stop after first verified proof (true/false)
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+jobs:
+  prcom-five-atp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+      BUDGET: ${{ github.event.inputs.budget || '30000' }}
+      RACE_INPUT: ${{ github.event.inputs.race || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime dependencies
+        run: python -m pip install --quiet numpy scipy scikit-learn joblib
+
+      - name: Reassemble frozen Predator 8.002 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = \
+               "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+          test "$(sha256sum prcom_quick_policy.joblib | awk '{print $1}')" = \
+               "0531268d3f6b99038d001bfa64bbfebb304620ae7394dc61ca998377cf87884c"
+
+      - name: Install five-ATP experiment files
+        shell: bash
+        run: |
+          cp experiments/prcom_five_atp/hhdf_prcom_bfts.py 'predator 8/recovered8_002/'
+          cp experiments/prcom_five_atp/prcom_five_atp_federation.py 'predator 8/recovered8_002/'
+          cp 'predator 8/recovered8_002/predator8_019_target.py' 'predator 8/recovered8_002/predator8_019_target.py'
+          python -m py_compile \
+            'predator 8/recovered8_002/hhdf_prcom_bfts.py' \
+            'predator 8/recovered8_002/prcom_five_atp_federation.py'
+
+      - name: Run five ATPs on prcom
+        shell: bash
+        run: |
+          set +e
+          cd 'predator 8/recovered8_002'
+          RACE=""
+          if [ "$RACE_INPUT" = "true" ]; then RACE="--race"; fi
+          python -u prcom_five_atp_federation.py set.mm \
+            --root . --budget "$BUDGET" $RACE \
+            --outdir prcom_five_atp_run 2>&1 | tee prcom_five_atp_console.log
+          RC=${PIPESTATUS[0]}
+          echo "federation_rc=$RC" > prcom_five_atp_run/run_status.txt
+          exit 0
+
+      - name: Upload full experiment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prcom-five-atp-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/prcom_five_atp_console.log
+            predator 8/recovered8_002/prcom_five_atp_run/**
+          if-no-files-found: warn
