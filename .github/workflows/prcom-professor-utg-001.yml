@@ -6,6 +6,7 @@ on:
       - experiment/prcom-professor-utg-001-20260924
     paths:
       - 'experiments/prcom_five_atp/prcom_professor_hybrid.py'
+      - 'experiments/prcom_five_atp/hhdf_prcom_bfts.py'
       - '.github/workflows/prcom-professor-utg-001.yml'
   workflow_dispatch:
 
@@ -92,6 +93,16 @@ jobs:
               --trace prcom_professor_utg_001/professor.trace.jsonl \
               > prcom_professor_utg_001/professor.log 2>&1
           RC_PROF=$?
+
+          # rc=1 is scientific UNKNOWN only when the runner emitted its summary.
+          if [ "$RC_CONTROL" -eq 1 ] && [ ! -s prcom_professor_utg_001/control.summary.json ]; then
+            echo "PROTOCOL FAILURE: control rc=1 without summary" >&2
+            RC_CONTROL=2
+          fi
+          if [ "$RC_PROF" -eq 1 ] && [ ! -s prcom_professor_utg_001/professor.summary.json ]; then
+            echo "PROTOCOL FAILURE: professor rc=1 without summary" >&2
+            RC_PROF=2
+          fi
 
           echo "control_rc=$RC_CONTROL" > prcom_professor_utg_001/run_status.txt
           echo "professor_rc=$RC_PROF" >> prcom_professor_utg_001/run_status.txt
