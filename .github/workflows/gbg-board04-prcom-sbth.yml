@@ -1,0 +1,165 @@
+name: Board-ATP 0.4 legal-grounding validation and sbth
+
+on:
+  push:
+    branches:
+      - experiment/gbg-board02-sbth
+    paths:
+      - 'predator 8/recovered8_002/gbg_board_04.py'
+      - '.github/workflows/gbg-board04-prcom-sbth.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ENV_SHA: '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
+
+jobs:
+  validate-prcom:
+    name: Board-ATP 0.4 prcom regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reassemble runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/runtime.b64
+          base64 -d /tmp/runtime.b64 > /tmp/runtime.zip
+          test "$(sha256sum /tmp/runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/runtime.zip
+          python -m py_compile Predator_8.001_FROZEN.py metamath.py setmm_grammar.py \
+            predator8_external_cv.py gbg_board_04.py
+      - name: Download set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = "${ENV_SHA}"
+      - name: Run prcom regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python -u gbg_board_04.py set.mm \
+            --label prcom --budget 30000 --seed 2301 --max-depth 12 --max-open 8 \
+            --creativity 0.55 --opener-cap 48 --progress 250 \
+            --out-prefix prcom_gbg_board04 | tee prcom_board04.log
+          grep -q '"outcome": "CANDIDATE_VERIFIED_INTERNAL"' prcom_board04.log
+      - name: Independent prcom CV
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          python -u predator8_external_cv.py set.mm \
+            --target prcom --certificate prcom_gbg_board04.mm | tee prcom_board04.cv.log
+      - name: Upload prcom artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: board04-prcom-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/prcom_board04.log
+            predator 8/recovered8_002/prcom_board04.cv.log
+            predator 8/recovered8_002/prcom_gbg_board04_result.json
+            predator 8/recovered8_002/prcom_gbg_board04_result.csv
+            predator 8/recovered8_002/prcom_gbg_board04.mm
+          if-no-files-found: ignore
+          retention-days: 90
+
+  sbth:
+    name: Board-ATP 0.4 sbth legal-grounding test
+    needs: validate-prcom
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reassemble runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/runtime.b64
+          base64 -d /tmp/runtime.b64 > /tmp/runtime.zip
+          test "$(sha256sum /tmp/runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/runtime.zip
+          python -m py_compile Predator_8.001_FROZEN.py metamath.py setmm_grammar.py \
+            predator8_external_cv.py gbg_board_04.py
+      - name: Download set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = "${ENV_SHA}"
+      - name: Run sbth
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o sbth_board04.time \
+          timeout 5100 python -u gbg_board_04.py set.mm \
+            --label sbth --budget 30000 --seed 2301 --max-depth 12 --max-open 8 \
+            --creativity 0.55 --opener-cap 48 --progress 250 \
+            --out-prefix sbth_gbg_board04 2>&1 | tee sbth_board04.log
+          RC=${PIPESTATUS[0]}
+          echo "returncode=${RC}" > sbth_board04.status
+          if [ "${RC}" -eq 0 ] || [ "${RC}" -eq 1 ] || [ "${RC}" -eq 124 ]; then exit 0; fi
+          exit 2
+      - name: Independent sbth CV if emitted
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          cd 'predator 8/recovered8_002'
+          if [ -s sbth_gbg_board04.mm ]; then
+            python -u predator8_external_cv.py set.mm \
+              --target sbth --certificate sbth_gbg_board04.mm | tee sbth_board04.cv.log
+            echo "returncode=${PIPESTATUS[0]}" > sbth_board04.cv.status
+          else
+            echo 'No candidate certificate emitted.' | tee sbth_board04.cv.log
+            echo 'returncode=2' > sbth_board04.cv.status
+          fi
+          exit 0
+      - name: Upload sbth artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: board04-sbth-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/sbth_board04.log
+            predator 8/recovered8_002/sbth_board04.time
+            predator 8/recovered8_002/sbth_board04.status
+            predator 8/recovered8_002/sbth_board04.cv.log
+            predator 8/recovered8_002/sbth_board04.cv.status
+            predator 8/recovered8_002/sbth_gbg_board04_result.json
+            predator 8/recovered8_002/sbth_gbg_board04_result.csv
+            predator 8/recovered8_002/sbth_gbg_board04.mm
+          if-no-files-found: ignore
+          retention-days: 90
