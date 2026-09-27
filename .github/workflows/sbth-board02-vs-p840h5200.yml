@@ -1,0 +1,250 @@
+name: SBTH transfer challenge Board-ATP 0.2 vs Predator 8.040-H5200
+
+on:
+  push:
+    branches:
+      - experiment/gbg-board02-sbth
+    paths:
+      - '.github/workflows/sbth-board02-vs-p840h5200.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sbth-board02-vs-p840h5200
+  cancel-in-progress: false
+
+env:
+  TARGET: sbth
+  BUDGET: '30000'
+  SEED: '2301'
+  MAX_DEPTH: '12'
+  MAX_OPEN: '8'
+  CREATIVITY: '0.55'
+  OPENER_CAP: '48'
+  ROTATE_STALE: '5200'
+  ENV_SHA: '1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5'
+
+jobs:
+  board02:
+    name: Board-ATP 0.2 on sbth
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reassemble recovered Board runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile Predator_8.001_FROZEN.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py gbg_board_02.py
+
+      - name: Download frozen set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = "${ENV_SHA}"
+
+      - name: Run frozen Board-ATP 0.2 transfer
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o sbth_board02.time \
+          timeout 5100 python -u gbg_board_02.py set.mm \
+            --label "${TARGET}" \
+            --budget "${BUDGET}" \
+            --seed "${SEED}" \
+            --max-depth "${MAX_DEPTH}" \
+            --max-open "${MAX_OPEN}" \
+            --creativity "${CREATIVITY}" \
+            --opener-cap "${OPENER_CAP}" \
+            --progress 250 \
+            --out-prefix sbth_gbg_board02 \
+            2>&1 | tee sbth_board02.log
+          RC=${PIPESTATUS[0]}
+          echo "returncode=${RC}" > sbth_board02.status
+          if [ "${RC}" -eq 0 ] || [ "${RC}" -eq 1 ] || [ "${RC}" -eq 124 ]; then exit 0; fi
+          exit 2
+
+      - name: Independent Board certificate check
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          cd 'predator 8/recovered8_002'
+          if [ -s sbth_gbg_board02.mm ]; then
+            python -u predator8_external_cv.py set.mm \
+              --target sbth --certificate sbth_gbg_board02.mm | tee sbth_board02.cv.log
+            echo "returncode=${PIPESTATUS[0]}" > sbth_board02.cv.status
+          else
+            echo 'No candidate certificate emitted.' | tee sbth_board02.cv.log
+            echo 'returncode=2' > sbth_board02.cv.status
+          fi
+          exit 0
+
+      - name: Upload Board record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbth-board02-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/sbth_board02.log
+            predator 8/recovered8_002/sbth_board02.time
+            predator 8/recovered8_002/sbth_board02.status
+            predator 8/recovered8_002/sbth_board02.cv.log
+            predator 8/recovered8_002/sbth_board02.cv.status
+            predator 8/recovered8_002/sbth_gbg_board02_result.json
+            predator 8/recovered8_002/sbth_gbg_board02_result.csv
+            predator 8/recovered8_002/sbth_gbg_board02.mm
+          if-no-files-found: ignore
+          retention-days: 90
+
+  predator:
+    name: Predator 8.040-H5200 on sbth
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      PREDATOR_840_ROTATE_STALE: '5200'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compile frozen Predator H5200 lineage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            metamath.py setmm_grammar.py \
+            'predator 8/predator 8.001.py' \
+            'predator 8/predator 8.002-compass.py' \
+            'predator 8/predator 8.003-R3I4.py' \
+            'predator 8/predator 8.004-R3I4-indexed.py' \
+            'predator 8/predator 8.005-R3I4-terminaldv.py' \
+            'predator 8/predator 8.006-R3I4-strategy-switch.py' \
+            'predator 8/predator 8.007-R3I4-dvcoherent-imagination.py' \
+            'predator 8/predator 8.040-R3I4-supervisory-rotation.py'
+          python -u 'predator 8/predator 8.040-R3I4-supervisory-rotation.py' selftest \
+            2>&1 | tee sbth_p840h5200_selftest.log
+
+      - name: Download frozen set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          test "$(sha256sum set.mm | awk '{print $1}')" = "${ENV_SHA}"
+
+      - name: Run frozen Predator 8.040-H5200 transfer
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o sbth_p840h5200.time \
+          timeout 5100 python -u 'predator 8.040-R3I4-supervisory-rotation.py' prove set.mm \
+            --label "${TARGET}" \
+            --budget "${BUDGET}" \
+            --max-depth "${MAX_DEPTH}" \
+            --agents 4 \
+            --creativity "${CREATIVITY}" \
+            --seed "${SEED}" \
+            --opener-cap "${OPENER_CAP}" \
+            --max-open "${MAX_OPEN}" \
+            --progress 250 \
+            --out sbth_p840h5200.mm \
+            2>&1 | tee sbth_p840h5200.log
+          RC=${PIPESTATUS[0]}
+          echo "returncode=${RC}" > sbth_p840h5200.status
+          if [ "${RC}" -eq 0 ] || [ "${RC}" -eq 1 ] || [ "${RC}" -eq 124 ]; then exit 0; fi
+          exit 2
+
+      - name: Independent Predator certificate check in frozen context
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          cd 'predator 8'
+          if [ ! -s sbth_p840h5200.mm ]; then
+            echo 'No candidate certificate emitted.' | tee sbth_p840h5200.cv.log
+            echo 'returncode=2' > sbth_p840h5200.cv.status
+            exit 0
+          fi
+
+          python - <<'PY' 2>&1 | tee sbth_p840h5200.cv.log
+          import re
+          from pathlib import Path
+          target = 'sbth'
+          env = Path('set.mm').read_text(encoding='utf-8')
+          cand = Path('sbth_p840h5200.mm').read_text(encoding='utf-8')
+          cps = list(re.finditer(r'\$=\s*(.*?)\s*\$\.', cand, re.S))
+          if len(cps) != 1:
+              raise SystemExit(f'expected exactly one emitted candidate proof, found {len(cps)}')
+          proof = cps[0].group(1).strip()
+          pat = re.compile(r'(?ms)(^[ \t]*' + re.escape(target) + r'[ \t]+\$p\b.*?\$=\s*)(.*?)(\s*\$\.)')
+          ms = list(pat.finditer(env))
+          if len(ms) != 1:
+              raise SystemExit(f'expected exactly one {target} theorem, found {len(ms)}')
+          m = ms[0]
+          patched = env[:m.start(2)] + proof + env[m.end(2):]
+          Path('sbth_p840h5200_context.mm').write_text(patched, encoding='utf-8')
+          print('candidate_proof_tokens=', len(proof.split()))
+          print('candidate substituted into sbth proof slot: OK')
+          PY
+          PREP=${PIPESTATUS[0]}
+          if [ "${PREP}" -ne 0 ]; then
+            echo "returncode=${PREP}" > sbth_p840h5200.cv.status
+            exit 0
+          fi
+
+          python -u ../metamath.py verify sbth_p840h5200_context.mm \
+            2>&1 | tee -a sbth_p840h5200.cv.log
+          RC=${PIPESTATUS[0]}
+          echo "returncode=${RC}" > sbth_p840h5200.cv.status
+          exit 0
+
+      - name: Upload Predator record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbth-p840h5200-${{ github.run_id }}
+          path: |
+            sbth_p840h5200_selftest.log
+            predator 8/sbth_p840h5200.log
+            predator 8/sbth_p840h5200.time
+            predator 8/sbth_p840h5200.status
+            predator 8/sbth_p840h5200.cv.log
+            predator 8/sbth_p840h5200.cv.status
+            predator 8/sbth_p840h5200.mm
+          if-no-files-found: ignore
+          retention-days: 90
