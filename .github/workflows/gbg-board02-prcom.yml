@@ -1,0 +1,118 @@
+name: GBG+ Board-ATP 0.2 prcom validation
+
+on:
+  push:
+    branches:
+      - experiment/gbg-board02-sbth
+    paths:
+      - 'predator 8/recovered8_002/gbg_board_02.py'
+      - '.github/workflows/gbg-board02-prcom.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  board02-prcom:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PYTHONPATH: ${{ github.workspace }}/predator 8/recovered8_002
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Reassemble recovered Predator runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          cat runtime_chunks/part00.b64 runtime_chunks/part01.b64 runtime_chunks/part02.b64 \
+              runtime_chunks/part03.b64 runtime_chunks/part04.b64 runtime_chunks/part05.b64 \
+              runtime_chunks/part06.b64 runtime_chunks/part07.b64 runtime_chunks/part08.b64 \
+              runtime_chunks/part09.b64 > /tmp/recovered8_002_runtime.b64
+          test "$(wc -c < /tmp/recovered8_002_runtime.b64 | tr -d ' ')" = "167804"
+          base64 -d /tmp/recovered8_002_runtime.b64 > /tmp/recovered8_002_runtime.zip
+          test "$(sha256sum /tmp/recovered8_002_runtime.zip | awk '{print $1}')" = \
+               "92b7fce75efb18a6a50b87729b4c286b14a9e89a94e4c7ffe054f3199252bac3"
+          unzip -q -o /tmp/recovered8_002_runtime.zip
+          python -m py_compile Predator_8.001_FROZEN.py predator8_external_cv.py \
+            setmm_grammar.py metamath.py gbg_board_02.py
+
+      - name: Download exact historical set.mm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          curl -L --retry 3 --fail -o set.mm \
+            https://raw.githubusercontent.com/metamath/set.mm/cd577894d8e6bf8b4fe8014c0d525d531507e4b7/set.mm
+          ENV_SHA=$(sha256sum set.mm | awk '{print $1}')
+          echo "environment_sha256=${ENV_SHA}" | tee board02_prcom_hashes.txt
+          test "${ENV_SHA}" = "1016d7edb0508abde0fe240bb5243e588c5067f8cb10ee6e1cc5733fc05acdb5"
+
+      - name: Run Board-ATP 0.2 on prcom
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd 'predator 8/recovered8_002'
+          /usr/bin/time -f 'wall_seconds=%e\nuser_seconds=%U\nsys_seconds=%S\nmax_rss_kb=%M' \
+            -o board02_prcom.time \
+          python -u gbg_board_02.py set.mm \
+            --label prcom \
+            --budget 30000 \
+            --seed 2301 \
+            --max-depth 12 \
+            --max-open 8 \
+            --creativity 0.55 \
+            --opener-cap 48 \
+            --progress 250 \
+            --out-prefix prcom_gbg_board02 \
+            2>&1 | tee board02_prcom.log
+          RC=${PIPESTATUS[0]}
+          echo "board_rc=${RC}" | tee board02_prcom_rc.txt
+          if [ "${RC}" -ne 0 ]; then exit "${RC}"; fi
+
+      - name: Independent certificate check if emitted
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 'predator 8/recovered8_002'
+          if [ -f prcom_gbg_board02.mm ]; then
+            python -u predator8_external_cv.py set.mm \
+              --target prcom --certificate prcom_gbg_board02.mm | tee board02_prcom_external_cv.log
+          else
+            echo "No certificate emitted." | tee board02_prcom_external_cv.log
+          fi
+
+      - name: Summarize
+        if: always()
+        shell: bash
+        run: |
+          cd 'predator 8/recovered8_002'
+          cat prcom_gbg_board02_result.json 2>/dev/null || true
+          cat board02_prcom.time 2>/dev/null || true
+          cat board02_prcom_external_cv.log 2>/dev/null || true
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gbg-board02-prcom-${{ github.run_id }}
+          path: |
+            predator 8/recovered8_002/board02_prcom_hashes.txt
+            predator 8/recovered8_002/board02_prcom_rc.txt
+            predator 8/recovered8_002/board02_prcom.log
+            predator 8/recovered8_002/board02_prcom.time
+            predator 8/recovered8_002/board02_prcom_external_cv.log
+            predator 8/recovered8_002/prcom_gbg_board02_result.json
+            predator 8/recovered8_002/prcom_gbg_board02_result.csv
+            predator 8/recovered8_002/prcom_gbg_board02.mm
+          if-no-files-found: ignore
+          retention-days: 90
