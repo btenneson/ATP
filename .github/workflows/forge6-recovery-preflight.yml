@@ -1,0 +1,49 @@
+name: FORGE-6 Recovery Diagnostic (not a settlement run)
+
+on:
+  push:
+    branches:
+      - recovery/forge6-eureka-exp1-20261008
+    paths:
+      - 'recovery/**'
+      - '.github/workflows/forge6-recovery-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nonauthorizing-preflight:
+    name: inspect recovered components without substituting engines
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out recovery branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run read-only readiness diagnostic
+        run: python recovery/forge6_readiness.py
+      - name: Assert this is not a scientific settlement
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('recovery/forge6_readiness_report.json').read_text())
+          assert r['official_experiment_authorized'] is False
+          assert r['scientific_trials_executed'] == 0
+          assert r['six_board_roles_exact'] is True
+          print('Diagnostic only:', r['static_status'])
+          print('Archived Metamath verifier selftest:', r['metamath_selftest']['status'])
+          print('Unresolved requirements:', len(r['unresolved_requirements']))
+          PY
+      - name: Preserve non-authorizing recovery report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge6-recovery-diagnostic
+          path: recovery/forge6_readiness_report.json
+          if-no-files-found: warn
+          retention-days: 30
