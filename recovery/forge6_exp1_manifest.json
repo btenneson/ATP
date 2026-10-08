@@ -1,0 +1,57 @@
+{
+  "experiment_id": "EP-EXP1-20261008",
+  "document_status": "READ_ONLY_RECOVERY_PREFLIGHT",
+  "intended_architecture": "FORGE-6 B0-B5, not DATA-MIND 3.1 eight-agent surrogate",
+  "experiment_target": "Frozen F_k original single-target complete charged-cost implementation question; retain target-recognition and differential-cost obligations.",
+  "control_and_treatment_creativity": "ON_IDENTICAL_TRAINED_IMPLEMENTATION_REQUIRED",
+  "paired_comparisons": 10,
+  "maximum_investigation_iterations_per_run": 20,
+  "treatment_initial_eureka_scout_hints": 1,
+  "scientific_runs_executed": 0,
+  "six_board_roles": {
+    "B0": "coordination and semantic bus",
+    "B1": "NEED / backward goals",
+    "B2": "HAVE / forward consequences",
+    "B3": "FAIL / refutation and falsification",
+    "B4": "WHERE / search geography",
+    "B5": "WHAT IF / counterfactual candidates"
+  },
+  "required_local_artifacts": {
+    "six_board_launcher": null,
+    "board_B0": null,
+    "board_B1": null,
+    "board_B2": null,
+    "board_B3": null,
+    "board_B4": null,
+    "board_B5": null,
+    "trained_creativity_module": null,
+    "trained_creativity_checkpoint": null,
+    "sat_cost_evaluator": null,
+    "sat_target_recognizer": null,
+    "sat_certificate_verifier": null,
+    "initial_certified_bank": null,
+    "frozen_sat_input_bundle": null,
+    "approved_charged_cost_ledger": null,
+    "live_six_board_integration_test_receipt": null
+  },
+  "expected_sha256": {
+    "trained_creativity_checkpoint": null,
+    "initial_certified_bank": null,
+    "frozen_sat_input_bundle": null
+  },
+  "known_research_sources_not_to_be_silently_substituted": [
+    "btenneson/Hodge: research/experiments/data41c_controlled_creativity_meta_compass.py",
+    "btenneson/Hodge: research/models/data41c_controlled_creativity_meta_compass.json",
+    "btenneson/Hodge: research/experiments/data43c_feedback_gated_structural_creativity.py",
+    "btenneson/ATP: branch dm31-adaptive-creativity-control, data_mind_3/control/controller.py",
+    "btenneson/ATP: branch dm31-frozen20-training-settlement-dev, experiments/dm31_settle_frozen20_target.py",
+    "btenneson/ATP: main, metamath.py is a Metamath verifier, not an F_k SAT verifier"
+  ],
+  "immutable_rules": [
+    "Never substitute an older eight-agent system for FORGE-6 B0-B5",
+    "Never treat a Metamath selftest as a test of the SAT cost evaluator",
+    "Never claim trained creativity loaded because a controller JSON exists",
+    "Never run the 20 scientific comparison trials until the integration and freeze gates pass",
+    "Do not overwrite original code, models, branch history, or experimental results"
+  ]
+}
