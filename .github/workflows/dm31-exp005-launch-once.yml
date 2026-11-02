@@ -1,0 +1,14 @@
+# DISARMED after Experiment 005 launch. Retained for audit only.
+name: DATA MIND 3.1 Experiment 005 PRCOM ONE-SHOT LAUNCH
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-only:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "One-shot launcher is disarmed. Use the preregistered dm31-prcom-exp005.yml workflow for any intentional future run."

@@ -6,6 +6,7 @@ import itertools
 import time
 from typing import Callable, Iterable
 
+from data_mind_3.control.controller import AdaptiveCreativityController
 from .matcher import apply_substitution, match_pattern, match_statement
 from .parser import Assertion, Database, Hypothesis
 
@@ -77,29 +78,52 @@ class StructuralLibrarian:
 
     def __init__(self, assertions: Iterable[Assertion]):
         self.assertions = tuple(assertions)
-        self._cache: dict[tuple[tuple[str, ...], int], tuple[Assertion, ...]] = {}
+        self._cache: dict[tuple[object, ...], tuple[Assertion, ...]] = {}
         self.by_type: dict[str, list[Assertion]] = {}
         for a in self.assertions:
             if a.statement:
                 self.by_type.setdefault(a.statement[0], []).append(a)
 
     @staticmethod
-    def _score(a: Assertion, goal: tuple[str, ...]) -> float:
+    def _score(
+        a: Assertion,
+        goal: tuple[str, ...],
+        target: tuple[str, ...] = (),
+        lemma_direction: float = 0.5,
+    ) -> float:
         fixed = set(_fixed_skeleton(a)[1:])
         gset = set(goal[1:])
+        tset = set(target[1:] if target and target[0] == "|-" else target)
         overlap = len(fixed & gset)
+        target_overlap = len(fixed & tset)
         len_bonus = 3.0 / (1.0 + abs(len(a.statement) - len(goal)))
         essential = sum(1 for h in a.mandatory_hypotheses if h.kind == "$e")
-        # A small preference for low-premise rules, not a proof-specific prior.
-        return 2.5 * overlap + len_bonus - 0.08 * essential
+        # lemma_direction controls how strongly retrieval remains anchored to
+        # the original target structure rather than only the immediate goal.
+        return (
+            2.5 * overlap
+            + 2.0 * lemma_direction * target_overlap
+            + len_bonus
+            - 0.08 * essential
+        )
 
-    def shelf(self, goal: tuple[str, ...], cap: int) -> tuple[Assertion, ...]:
-        key = (goal, cap)
+    def shelf(
+        self,
+        goal: tuple[str, ...],
+        cap: int,
+        *,
+        target: tuple[str, ...] = (),
+        lemma_direction: float = 0.5,
+    ) -> tuple[Assertion, ...]:
+        key = (goal, cap, target, round(float(lemma_direction), 3))
         if key in self._cache:
             return self._cache[key]
         pool = self.by_type.get(goal[0], ()) if goal else ()
         filtered = [a for a in pool if _is_subsequence(_fixed_skeleton(a), goal)]
-        ranked = sorted(filtered, key=lambda a: (-self._score(a, goal), a.order, a.label))
+        ranked = sorted(
+            filtered,
+            key=lambda a: (-self._score(a, goal, target, lemma_direction), a.order, a.label),
+        )
         value = tuple(ranked[:cap] if cap > 0 else ranked)
         self._cache[key] = value
         return value
@@ -159,12 +183,7 @@ class SyntaxOracle:
 
 
 class TermScout:
-    """Generate typed term proposals without consulting the target proof.
-
-    Sources are visible target syntax plus legal-prefix `df-*` equalities. This
-    is a generic presentation-exploration mechanism: definitions suggest useful
-    alternate terms, but only the final Metamath verifier can establish a proof.
-    """
+    """Prefix-derived typed term proposals; never a source of proof authority."""
 
     def __init__(
         self,
@@ -195,7 +214,6 @@ class TermScout:
 
     def _add_spans(self, tokens: tuple[str, ...]) -> bool:
         changed = False
-        # Formula typecode is not part of the term itself.
         body = tokens[1:] if tokens and tokens[0] in ("|-", "wff", "class", "setvar") else tokens
         n = len(body)
         for i in range(n):
@@ -244,17 +262,30 @@ class TermScout:
             if not changed:
                 break
 
-    def terms(self, typecode: str, goal: tuple[str, ...], limit: int = 24) -> tuple[tuple[str, ...], ...]:
+    def terms(
+        self,
+        typecode: str,
+        goal: tuple[str, ...],
+        limit: int = 24,
+        *,
+        target: tuple[str, ...] = (),
+        term_ordering: float = 0.5,
+        definition_rounds: int = 1,
+    ) -> tuple[tuple[str, ...], ...]:
         self.observe(goal)
-        # One cheap definition update allows newly observed goal subterms to trade.
-        self._definition_expand(1)
+        self._definition_expand(definition_rounds)
         terms = self.pool.get(typecode, set())
         gset = set(goal)
-        ranked = sorted(
-            terms,
-            key=lambda t: (-len(set(t) & gset), len(t), t),
-        )
-        return tuple(ranked[:limit])
+        tset = set(target)
+        w = max(0.0, min(1.0, term_ordering))
+
+        def key(term: tuple[str, ...]) -> tuple[float, int, tuple[str, ...]]:
+            local = len(set(term) & gset)
+            global_ = len(set(term) & tset)
+            blended = (1.0 - w) * local + w * global_
+            return (-blended, len(term), term)
+
+        return tuple(sorted(terms, key=key)[:limit])
 
 
 class PartialCredit:
@@ -306,6 +337,11 @@ def _complete_substitutions(
     term_scout: TermScout,
     goal: tuple[str, ...],
     cap: int,
+    *,
+    term_limit: int = 16,
+    target_statement: tuple[str, ...] = (),
+    term_ordering: float = 0.5,
+    definition_rounds: int = 1,
 ) -> tuple[dict[str, tuple[str, ...]], ...]:
     missing = [v for v in sorted(assertion.mandatory_variables) if v not in base]
     if not missing:
@@ -313,7 +349,14 @@ def _complete_substitutions(
     pools: list[tuple[tuple[str, ...], ...]] = []
     tmap = assertion.variable_type_map
     for v in missing:
-        terms = term_scout.terms(tmap.get(v, "class"), goal, limit=16)
+        terms = term_scout.terms(
+            tmap.get(v, "class"),
+            goal,
+            limit=term_limit,
+            target=target_statement,
+            term_ordering=term_ordering,
+            definition_rounds=definition_rounds,
+        )
         if not terms:
             return ()
         pools.append(terms)
@@ -348,11 +391,25 @@ def _linearize(root_gid: int, derivations: dict[int, Derivation]) -> tuple[str, 
     return tuple(out)
 
 
+def _state_relevance(
+    state: SearchState,
+    target_statement: tuple[str, ...],
+    controller: AdaptiveCreativityController | None,
+) -> float:
+    if not state.open_goals:
+        return 1.0
+    if controller is None:
+        return 0.0
+    vals = [controller.relevance(g.statement, target_statement) for g in state.open_goals]
+    return sum(vals) / len(vals)
+
+
 def search_target(
     db: Database,
     target_label: str,
     config: SearchConfig,
     verify_candidate: Callable[[tuple[str, ...]], tuple[bool, dict]] | None = None,
+    controller: AdaptiveCreativityController | None = None,
 ) -> SearchResult:
     target = db.target(target_label)
     legal_assertions = db.assertions_before(target)
@@ -403,40 +460,88 @@ def search_target(
             continue
 
         expansions += 1
-        goal = state.open_goals[0]
-        rest = state.open_goals[1:]
+        effective = controller.effective(config) if controller is not None else {
+            "candidate_cap": config.candidate_cap,
+            "match_cap_per_candidate": config.match_cap_per_candidate,
+            "free_var_completion_cap": config.free_var_completion_cap,
+            "max_depth": config.max_depth,
+            "term_limit": 16,
+            "definition_rounds": 1,
+            "lemma_direction": 0.0,
+            "heuristic_weighting": 0.0,
+            "term_ordering": 0.5,
+            "node_selection": 0.0,
+            "divergence": 1.0,
+        }
+
+        goal_idx = 0
+        if controller is not None:
+            goal_idx = controller.choose_goal_index(
+                tuple(g.statement for g in state.open_goals), target.statement
+            )
+        goal = state.open_goals[goal_idx]
+        rest = state.open_goals[:goal_idx] + state.open_goals[goal_idx + 1:]
         term_scout.observe(goal.statement)
+        state_pc = PartialCredit.value(state)
+        state_rel = (
+            controller.relevance(goal.statement, target.statement)
+            if controller is not None else 0.0
+        )
         historian.append({"actor": "Search", "action": "expand", "expansion": expansions,
                           "goal": " ".join(goal.statement), "open_goals": len(state.open_goals),
-                          "pc": PartialCredit.value(state)})
+                          "pc": state_pc, "target_relevance": state_rel})
+
+        def score_child(child: SearchState) -> tuple[float, float]:
+            rel = _state_relevance(child, target.statement, controller)
+            if controller is None:
+                return Scout.successor_score(state, child), rel
+            return controller.successor_score(
+                partial_credit=PartialCredit.value(child),
+                relevance=rel,
+                depth=child.depth,
+                open_goals=len(child.open_goals),
+            ), rel
 
         hyp_label = target_hyp_by_stmt.get(goal.statement)
         if hyp_label is not None:
             deriv = dict(state.derivations)
             deriv[goal.gid] = Derivation(hyp_label, ())
             child = SearchState(rest, deriv, state.next_gid, state.depth, last_action=hyp_label)
-            child.score = Scout.successor_score(state, child)
+            child.score, _ = score_child(child)
             heapq.heappush(frontier, (-child.score, next(counter), child))
             generated += 1
 
-        shelf = librarian.shelf(goal.statement, config.candidate_cap)
+        shelf = librarian.shelf(
+            goal.statement,
+            int(effective["candidate_cap"]),
+            target=target.statement,
+            lemma_direction=float(effective["lemma_direction"]),
+        )
         historian.append({"actor": "Librarian", "action": "retrieve", "expansion": expansions,
                           "goal": " ".join(goal.statement), "shelf_size": len(shelf),
-                          "shelf_labels": [a.label for a in shelf]})
+                          "shelf_labels": [a.label for a in shelf],
+                          "effective_candidate_cap": int(effective["candidate_cap"])})
         admitted_here = 0
         for cand in shelf:
             for match in match_statement(
                 cand, goal.statement, db.variables,
-                max_matches=config.match_cap_per_candidate,
+                max_matches=int(effective["match_cap_per_candidate"]),
                 max_sequence_len=config.max_sequence_len,
             ):
                 for subst in _complete_substitutions(
-                    cand, match.as_dict(), term_scout, goal.statement,
-                    config.free_var_completion_cap,
+                    cand,
+                    match.as_dict(),
+                    term_scout,
+                    goal.statement,
+                    int(effective["free_var_completion_cap"]),
+                    term_limit=int(effective["term_limit"]),
+                    target_statement=target.statement,
+                    term_ordering=float(effective["term_ordering"]),
+                    definition_rounds=int(effective["definition_rounds"]),
                 ):
                     if not _dv_ok(cand, subst, target, db.variables):
                         continue
-                    if state.depth + 1 > config.max_depth:
+                    if state.depth + 1 > int(effective["max_depth"]):
                         continue
 
                     premise_refs: list[object] = []
@@ -462,19 +567,43 @@ def search_target(
                     deriv[goal.gid] = Derivation(cand.label, tuple(premise_refs))
                     child = SearchState(tuple(new_goals) + rest, deriv, ngid,
                                         state.depth + 1, last_action=cand.label)
-                    child.score = Scout.successor_score(state, child)
+                    child.score, child_rel = score_child(child)
                     heapq.heappush(frontier, (-child.score, next(counter), child))
                     generated += 1
                     admitted_here += 1
                     historian.append({"actor": "Scout", "action": "score_successor",
                                       "expansion": expansions, "candidate": cand.label,
                                       "score": child.score, "child_open_goals": len(child.open_goals),
+                                      "target_relevance": child_rel,
                                       "free_vars_completed": len(cand.mandatory_variables - match.as_dict().keys())})
-                    historian.append({"actor": "Professor", "action": "admit_successor",
-                                      "expansion": expansions, "candidate": cand.label})
+                    if controller is None:
+                        priority = "normal"
+                    else:
+                        c = controller.creativity
+                        low_cut = 0.10 + 0.25 * (1.0 - c.risk_tolerance) * (1.0 - c.divergence)
+                        high_cut = min(0.85, low_cut + 0.35)
+                        priority = "high" if child_rel >= high_cut else "low" if child_rel < low_cut else "normal"
+                    historian.append({"actor": "Professor", "action": "prioritize_successor",
+                                      "expansion": expansions, "candidate": cand.label,
+                                      "priority": priority, "target_relevance": child_rel})
         if admitted_here == 0 and hyp_label is None:
             historian.append({"actor": "Quicksand", "action": "no_legal_successor",
                               "expansion": expansions, "goal": " ".join(goal.statement)})
+
+        if controller is not None:
+            event = controller.observe_expansion(
+                expansion=expansions,
+                generated_total=generated,
+                frontier=len(frontier),
+                max_frontier=config.max_frontier,
+                elapsed=time.monotonic() - start,
+                timeout=config.timeout_s,
+                partial_credit=state_pc,
+                relevance=state_rel,
+                base_config=config,
+            )
+            if event is not None:
+                historian.append(event)
 
     elapsed = time.monotonic() - start
     return SearchResult("UNKNOWN", expansions, generated, elapsed_s=elapsed,
